@@ -221,3 +221,6 @@ If you find this project useful, please consider [sponsoring](https://hufe.club/
 This project is licensed under the [MIT License](./LICENSE).
 
 Copyright © 2022–present, [Hufe921](https://github.com/Hufe921).
+
+表格存在多个问题，1、表格分页功能，例如跨页的表格在修改列宽的时候，不能够同步。2、表格复制粘贴，表格过长会出现异常截取，且截断后面的数据没展示。3、插入的表格高度超过2页时，第三页内容不展示 。4、在操作文档的时候导致表格分裂成2个, 后续合并在一个页面中时无法复原。5、表格断行了。6、在word上编辑好的表格，再复制到编辑器中格式没有复制过去。7、多次enter将table移动到下一页后table分体了。8、表格跨页的问题 表格分割的问题。9、换页导致表格拆分。10、使用executeInsertElementList插入带数据的表格，内容会被截断。11、粘贴跨页面的长表格。12、表格跨页时候后续executeInsertElementList内容位置有误。13、表格合并单元格，分页场景下，内容展示不出来。14、表格内容显示异常。15、关于复制表格时，表格有合并项，导致复制到页面的表格显示不全
+

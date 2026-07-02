@@ -2,6 +2,8 @@ import { ImageDisplay } from '../../../dataset/enum/Common'
 import { ControlComponent } from '../../../dataset/enum/Control'
 import { ElementType } from '../../../dataset/enum/Element'
 import { CanvasEvent } from '../CanvasEvent'
+import { IElement } from '../../../interface/Element'
+import { SplitTdRange } from '../../../interface/Range'
 
 export function mousemove(evt: MouseEvent, host: CanvasEvent) {
   const draw = host.getDraw()
@@ -71,17 +73,61 @@ export function mousemove(evt: MouseEvent, host: CanvasEvent) {
     index: startIndex,
     isTable: startIsTable,
     tdIndex: startTdIndex,
+    tdId: startTdId,
     trIndex: startTrIndex,
     tableId: startTableId
   } = host.mouseDownStartPosition
   const endIndex = isTable ? tdValueIndex! : index
   // 判断是否是表格跨行/列
   const rangeManager = draw.getRange()
-  if (
-    isTable &&
-    startIsTable &&
-    (tdIndex !== startTdIndex || trIndex !== startTrIndex)
-  ) {
+  // 是否是跨页单元格
+  type SplitItem = {
+    index: number
+    element: IElement
+    originalId?: string
+    isCurrent: boolean
+    length: number
+    startIndex: number
+  }
+  let splitTd: [SplitItem, SplitItem] | undefined = undefined
+  if (tdId !== startTdId && !!tdId && !!startTdId) {
+    // 判断是否是跨页单元格
+    const startTd = draw.getTdByPosition({
+      ...host.mouseDownStartPosition,
+      isTable: !!host.mouseDownStartPosition.tableId,
+      index:
+        host.mouseDownStartPosition.originalIndex ??
+        host.mouseDownStartPosition.index
+    })!
+    const endTd = draw.getTdByPosition({
+      ...positionResult,
+      isTable: !!positionResult.tableId,
+      index: positionResult.index
+    })!
+    if (draw.isSplitTd(startTd, endTd)) {
+      const startValueIndex = (startTd.valueStartIndex ?? 0) + startIndex
+      const endValueIndex = (endTd.valueStartIndex ?? 0) + tdValueIndex!
+      splitTd = [
+        {
+          index: startValueIndex,
+          element: startTd.value[startIndex],
+          originalId: startTd.originalId,
+          isCurrent: false,
+          length: startTd.value.length,
+          startIndex: startTd.valueStartIndex ?? 0
+        },
+        {
+          index: endValueIndex,
+          element: endTd.value[tdValueIndex!],
+          originalId: endTd.originalId,
+          isCurrent: true,
+          length: endTd.value.length,
+          startIndex: endTd.valueStartIndex ?? 0
+        }
+      ]
+    }
+  }
+  if (isTable && startIsTable && tdId !== startTdId && !splitTd) {
     rangeManager.setRange(
       endIndex,
       endIndex,
@@ -92,7 +138,7 @@ export function mousemove(evt: MouseEvent, host: CanvasEvent) {
       trIndex
     )
     position.setPositionContext({
-      isTable,
+      isTable: !!isTable,
       index,
       trIndex,
       tdIndex,
@@ -103,18 +149,32 @@ export function mousemove(evt: MouseEvent, host: CanvasEvent) {
   } else {
     let end = ~endIndex ? endIndex : 0
     // 开始或结束位置存在表格，但是非相同表格则忽略选区设置
-    if ((startIsTable || isTable) && startTableId !== tableId) return
+    if ((startIsTable || isTable) && startTableId !== tableId && !splitTd) {
+      return
+    }
+    position.setPositionContext({
+      isTable: !!isTable,
+      index,
+      trIndex,
+      tdIndex,
+      tdId,
+      trId,
+      tableId
+    })
     // 开始位置
     let start = startIndex
-    if (start > end) {
+    let startElement: IElement | undefined
+    let endElement: IElement | undefined
+    if (splitTd) {
       // prettier-ignore
-      [start, end] = [end, start]
+      [{element: startElement}, {element: endElement}] = splitTd
+    } else {
+      const elementList = draw.getElementList()
+      startElement = elementList[start + 1]
+      endElement = elementList[end]
     }
     if (start === end) return
     // 背景文本禁止选区
-    const elementList = draw.getElementList()
-    const startElement = elementList[start + 1]
-    const endElement = elementList[end]
     if (
       startElement?.controlComponent === ControlComponent.PLACEHOLDER &&
       endElement?.controlComponent === ControlComponent.PLACEHOLDER &&
@@ -122,7 +182,38 @@ export function mousemove(evt: MouseEvent, host: CanvasEvent) {
     ) {
       return
     }
-    rangeManager.setRange(start, end)
+    if (start > end) {
+      // prettier-ignore
+      [start, end] = [end, start]
+    }
+    let splitTdRange: SplitTdRange | undefined
+    if (splitTd) {
+      const [startTd, endTd] = splitTd.sort((a, b) => a.index - b.index)
+      splitTdRange = {
+        originalId: splitTd[0].originalId ?? splitTd[1].originalId!,
+        startIndex: startTd.index,
+        endIndex: endTd.index
+      }
+      if (startTd.isCurrent) {
+        // 当前鼠标在第一个单元格
+        start = startTd.index
+        end = startTd.length - 1
+      } else {
+        // 当前鼠标在最后一个单元格
+        start = 0
+        end = splitTdRange.endIndex - endTd.startIndex
+      }
+    }
+    rangeManager.setRange(
+      start,
+      end,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      splitTdRange
+    )
   }
   // 绘制
   draw.render({

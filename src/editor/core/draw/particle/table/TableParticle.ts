@@ -2,6 +2,7 @@ import { ElementType, IElement, TableBorder } from '../../../..'
 import { TdBorder, TdSlash } from '../../../../dataset/enum/table/Table'
 import { DeepRequired } from '../../../../interface/Common'
 import { IEditorOption } from '../../../../interface/Editor'
+import { IRow } from '../../../../interface/Row'
 import { ITd } from '../../../../interface/table/Td'
 import { ITr } from '../../../../interface/table/Tr'
 import { deepClone } from '../../../../utils'
@@ -17,6 +18,8 @@ interface IDrawTableBorderOption {
   borderExternalWidth?: number
   isDrawFullBorder?: boolean
 }
+
+export interface ComputeTrHeightOptions {}
 
 interface IMergeSplittedTablePayload {
   elementList: IElement[]
@@ -612,5 +615,126 @@ export class TableParticle {
   ) {
     this._drawBackgroundColor(ctx, element, startX, startY)
     this._drawBorder(ctx, element, startX, startY)
+  }
+
+  // 向前查找跨行的单元格
+  findPreRowSpanTd(
+    trList: ITr[],
+    startTrIndex: number,
+    colIndex: number
+  ): ITd | undefined {
+    for (let trIdx = startTrIndex; trIdx >= 0; trIdx--) {
+      const findTd = trList[trIdx].tdList.find(td => td.colIndex === colIndex)
+      if (findTd) {
+        return findTd
+      }
+    }
+    return undefined
+  }
+
+  computeTrHeight(element: IElement, computeRowList?: (td: ITd) => IRow[]) {
+    const {
+      scale,
+      table: { tdPadding, defaultTrMinHeight }
+    } = this.options
+
+    const tdPaddingHeight = tdPadding[0] + tdPadding[2]
+    const trList = element.trList!
+    // 计算前移除上一次的高度
+    for (let t = 0; t < trList.length; t++) {
+      const tr = trList[t]
+      tr.height = tr.minHeight || defaultTrMinHeight
+      tr.minHeight = tr.height
+    }
+    // 计算表格行列
+    this.computeRowColInfo(element)
+    // 跨行单元格集合
+    const rowSpanMap: Record<
+      string,
+      {
+        td: ITd
+        rowSpan: [number, number]
+        extraHeight: number
+        preHeight: number
+        preMinHeight: number
+      }
+    > = {}
+    const lastRowSpanId: Record<number, string> = {}
+    // 计算表格内元素信息
+    for (let trIndex = 0; trIndex < trList.length; trIndex++) {
+      const tr = trList[trIndex]
+      if (!tr.tdList.length) {
+        tr.height = 0
+        continue
+      }
+      const tdHeightList: number[] = []
+      const tdRowspanHeightList: number[] = []
+      for (let colIndex = 0; colIndex < element.colgroup!.length; colIndex++) {
+        const td = tr.tdList.find(td => td.colIndex === colIndex)
+        if (td) {
+          const rowList = computeRowList ? computeRowList(td) : td.rowList!
+          const rowHeight = rowList.reduce((pre, cur) => pre + cur.height, 0)
+          td.rowList = rowList
+          // 移除缩放导致的行高变化-渲染时会进行缩放调整
+          const curTdHeight = rowHeight / scale + tdPaddingHeight
+          td.mainHeight = curTdHeight
+          // 内容高度大于当前单元格高度需增加
+          if (td.rowspan > 1) {
+            lastRowSpanId[td.colIndex!] = td.id!
+            // 跨行时 记录表格行额外高度
+            rowSpanMap[td.id!] = {
+              td,
+              rowSpan: [trIndex, trIndex + td.rowspan - 1],
+              preHeight: 0,
+              preMinHeight: 0,
+              extraHeight: curTdHeight
+            }
+            tdRowspanHeightList.push(curTdHeight)
+          } else {
+            if (td.height! < curTdHeight) {
+              td.height = curTdHeight
+              td.realHeight = curTdHeight
+              tdHeightList.push(curTdHeight)
+            } else {
+              tdHeightList.push(td.height!)
+            }
+          }
+        } else {
+          // 未找到td 说明是跨行单元格
+          const rowSpanTd = rowSpanMap[lastRowSpanId[colIndex]]
+          if (rowSpanTd?.rowSpan[1] == trIndex) {
+            // 当前是跨尾行
+            tdHeightList.push(rowSpanTd.extraHeight)
+          }
+        }
+      }
+
+      const curTrHeight = Math.max(
+        ...(tdHeightList.length ? tdHeightList : tdRowspanHeightList)
+      )
+      // 更新跨行单元格额外高度
+      Object.values(rowSpanMap).forEach(data => {
+        if (data.rowSpan[0] <= trIndex && data.rowSpan[1] >= trIndex) {
+          data.extraHeight -= curTrHeight
+          data.preHeight += curTrHeight
+          data.preMinHeight += tr.minHeight!
+        }
+      })
+      tr.height = curTrHeight
+      for (let colIndex = 0; colIndex < element.colgroup!.length; colIndex++) {
+        const td =
+          tr.tdList.find(td => td.colIndex === colIndex) ??
+          this.findPreRowSpanTd(trList, trIndex, colIndex)
+        if (td) {
+          const preHeight = rowSpanMap[td.id!]?.preHeight ?? 0
+          const preMinHeight = rowSpanMap[td.id!]?.preMinHeight ?? tr.minHeight!
+          td.height = curTrHeight + preHeight
+          td.realHeight = curTrHeight + preHeight
+          td.realMinHeight = preMinHeight
+        }
+      }
+    }
+    // 需要重新计算表格内值
+    this.computeRowColInfo(element)
   }
 }

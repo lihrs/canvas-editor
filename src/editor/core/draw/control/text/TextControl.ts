@@ -15,6 +15,7 @@ import { IElement } from '../../../../interface/Element'
 import { omitObject, pickObject } from '../../../../utils'
 import { formatElementContext } from '../../../../utils/element'
 import { Control } from '../Control'
+import { ElementType } from '../../../../dataset/enum/Element'
 
 export class TextControl implements IControlInstance {
   private element: IElement
@@ -38,13 +39,36 @@ export class TextControl implements IControlInstance {
 
   public getValue(context: IControlContext = {}): IElement[] {
     const elementList = context.elementList || this.control.getElementList()
-    const { startIndex } = context.range || this.control.getRange()
+    let { startIndex } = context.range || this.control.getRange()
+    const draw = this.control.getDraw()
+    const curTd = context ? null : draw.getTd()
+    if (startIndex >= elementList.length) {
+      startIndex = elementList.length - 1
+    }
     const startElement = elementList[startIndex]
     const data: IElement[] = []
+
+    let findTd = curTd
     // 向左查找
+    let prevList = elementList
     let preIndex = startIndex
-    while (preIndex > 0) {
-      const preElement = elementList[preIndex]
+    while (true) {
+      if (preIndex < 0) {
+        if (findTd?.linkTdPrevId) {
+          // 超出边界 进入nextTd
+          const prevTd = draw.getTdById(findTd.linkTdPrevId)
+          if (prevTd) {
+            prevList = prevTd.value
+            preIndex = prevList.length - 1
+            findTd = prevTd
+            continue
+          }
+        }
+      }
+      if (preIndex < 0) {
+        break
+      }
+      const preElement = prevList[preIndex]
       if (
         preElement.controlId !== startElement.controlId ||
         preElement.controlComponent === ControlComponent.PREFIX ||
@@ -57,11 +81,27 @@ export class TextControl implements IControlInstance {
       }
       preIndex--
     }
+
+    findTd = curTd
     // 向右查找
+    let nextList = elementList
     let nextIndex = startIndex + 1
-    while (nextIndex < elementList.length) {
-      const nextElement = elementList[nextIndex]
+    while (true) {
+      if (nextIndex >= nextList.length) {
+        if (findTd?.linkTdNextId) {
+          // 超出边界 进入nextTd
+          const nextTd = draw.getTdById(findTd.linkTdNextId)
+          if (nextTd) {
+            nextList = nextTd.value
+            nextIndex = 0
+            findTd = nextTd
+            continue
+          }
+        }
+      }
+      const nextElement = nextList[nextIndex]
       if (
+        !nextElement ||
         nextElement.controlId !== startElement.controlId ||
         nextElement.controlComponent === ControlComponent.POSTFIX ||
         nextElement.controlComponent === ControlComponent.POST_TEXT
@@ -73,7 +113,29 @@ export class TextControl implements IControlInstance {
       }
       nextIndex++
     }
-    return data
+    return data.filter(item => item.type !== ElementType.SPLIT_TAG)
+  }
+
+  public removeNextControlElement(
+    controlId: string,
+    nextTdId?: string
+  ): IElement | undefined {
+    const draw = this.control.getDraw()
+    nextTdId = nextTdId ?? draw.getTd()?.linkTdNextId
+    if (nextTdId) {
+      const nextTd = draw.getTdById(nextTdId)
+      if (nextTd) {
+        if (nextTd.value.length) {
+          if (nextTd.value[1].controlId === controlId) {
+            draw.spliceElementList(nextTd.value, 1, 1)
+            return nextTd.value[1]
+          }
+        } else if (nextTd.linkTdNextId) {
+          return this.removeNextControlElement(controlId, nextTd.linkTdNextId)
+        }
+      }
+    }
+    return
   }
 
   public setValue(
@@ -88,8 +150,7 @@ export class TextControl implements IControlInstance {
     ) {
       return -1
     }
-    const elementList = context.elementList || this.control.getElementList()
-    const range = context.range || this.control.getRange()
+    const { elementList, range } = this.control.mergeControl(context)
     // 收缩边界到Value内
     this.control.shrinkBoundary(context)
     const { startIndex, endIndex } = range
@@ -151,6 +212,7 @@ export class TextControl implements IControlInstance {
     }
     const elementList = context.elementList || this.control.getElementList()
     const range = context.range || this.control.getRange()
+    this.control.shrinkBoundary(context)
     const { startIndex, endIndex } = range
     this.control
       .getDraw()
@@ -163,9 +225,11 @@ export class TextControl implements IControlInstance {
           isIgnoreDeletedRule: options.isIgnoreDeletedRule
         }
       )
-    const value = this.getValue(context)
-    if (!value.length) {
-      this.control.addPlaceholder(startIndex, context)
+    if (options.isAddPlaceholder !== false) {
+      const value = this.getValue(context)
+      if (!value.length) {
+        this.control.addPlaceholder(startIndex, context)
+      }
     }
     return startIndex
   }
@@ -195,6 +259,9 @@ export class TextControl implements IControlInstance {
         if (!value.length) {
           this.control.addPlaceholder(startIndex)
         }
+        if (startIndex === 0 && elementList[0].type === ElementType.SPLIT_TAG) {
+          return draw.fixPosition(true) ?? startIndex
+        }
         return startIndex
       } else {
         if (
@@ -213,6 +280,13 @@ export class TextControl implements IControlInstance {
           if (!value.length) {
             this.control.addPlaceholder(startIndex - 1)
           }
+          if (
+            (startIndex === 1 &&
+              elementList[0].type === ElementType.SPLIT_TAG) ||
+            startIndex === 0
+          ) {
+            return draw.fixPosition(true) ?? startIndex - 1
+          }
           return startIndex - 1
         }
       }
@@ -228,25 +302,44 @@ export class TextControl implements IControlInstance {
         if (!value.length) {
           this.control.addPlaceholder(startIndex)
         }
+        if (startIndex === 0 && elementList[0].type === ElementType.SPLIT_TAG) {
+          return draw.fixPosition(true) ?? startIndex
+        }
         return startIndex
       } else {
-        const endNextElement = elementList[endIndex + 1]
+        const endNextElement: IElement | undefined = elementList[endIndex + 1]
+        if (!endNextElement) {
+          // 未找到下一个元素 判断是否是拆分单元格
+          const curTd = draw.getTd()
+          if (curTd?.linkTdNextId && startElement.controlId) {
+            this.removeNextControlElement(startElement.controlId)
+          }
+        }
         if (
-          ((startElement.controlComponent === ControlComponent.PREFIX ||
+          endNextElement &&
+          (((startElement.controlComponent === ControlComponent.PREFIX ||
             startElement.controlComponent === ControlComponent.PRE_TEXT) &&
             endNextElement.controlComponent === ControlComponent.PLACEHOLDER) ||
-          endNextElement.controlComponent === ControlComponent.POSTFIX ||
-          endNextElement.controlComponent === ControlComponent.POST_TEXT ||
-          startElement.controlComponent === ControlComponent.PLACEHOLDER
+            endNextElement.controlComponent === ControlComponent.POSTFIX ||
+            endNextElement.controlComponent === ControlComponent.POST_TEXT ||
+            startElement.controlComponent === ControlComponent.PLACEHOLDER)
         ) {
           // 前缀、后缀、占位符
           return this.control.removeControl(startIndex)
         } else {
           // 文本
-          draw.spliceElementList(elementList, startIndex + 1, 1)
+          if (endNextElement) {
+            draw.spliceElementList(elementList, startIndex + 1, 1)
+          }
           const value = this.getValue()
           if (!value.length) {
             this.control.addPlaceholder(startIndex)
+          }
+          if (
+            startIndex === 0 &&
+            elementList[0].type === ElementType.SPLIT_TAG
+          ) {
+            return draw.fixPosition(true) ?? startIndex
           }
           return startIndex
         }

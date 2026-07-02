@@ -24,8 +24,8 @@ export function input(data: string, host: CanvasEvent) {
   // 移除合成前，缓存设置的默认样式设置
   const defaultStyle =
     rangeManager.getDefaultStyle() || host.compositionInfo?.defaultStyle || null
-  // 移除合成输入
-  removeComposingInput(host)
+  // 合成输入内容(单元格拆分后, compositionInfo中的元素列表不再直接影响真实元素,这里传入真实列表进行合成)
+  const elementList = composingInputElements(host, draw.getElementList())
   if (!isComposing) {
     const cursor = draw.getCursor()
     cursor.clearAgentDomValue()
@@ -34,8 +34,7 @@ export function input(data: string, host: CanvasEvent) {
   const text = data.replaceAll(`\n`, ZERO)
   const { startIndex, endIndex } = rangeManager.getRange()
   // 格式化元素
-  const elementList = draw.getElementList()
-  const copyElement = rangeManager.getRangeAnchorStyle(elementList, endIndex)
+  const copyElement = rangeManager.getRangeAnchorStyle(elementList, startIndex)
   if (!copyElement) return
   const isDesignMode = draw.isDesignMode()
   const inputData: IElement[] = splitText(text).map(value => {
@@ -85,36 +84,43 @@ export function input(data: string, host: CanvasEvent) {
   // 控件-移除placeholder
   const control = draw.getControl()
   let curIndex: number
-  if (control.getActiveControl() && control.getIsRangeWithinControl()) {
-    curIndex = control.setValue(inputData)
-    if (!isComposing) {
-      control.emitControlContentChange()
+  // 组合输入期间不处理元素内容
+  if (!isComposing) {
+    if (control.getActiveControl() && control.getIsRangeWithinControl()) {
+      curIndex = control.setValue(inputData)
+      if (!isComposing) {
+        control.emitControlContentChange()
+      }
+    } else {
+      const start = startIndex + 1
+      if (startIndex !== endIndex) {
+        // 如果存在跨单元格选区
+        draw.removeSplitTdOtherRangeElements()
+        // 删除选区
+        draw.spliceElementList(elementList, start, endIndex - startIndex)
+      }
+      formatElementContext(elementList, inputData, startIndex, {
+        editorOptions: draw.getOptions()
+      })
+      draw.spliceElementList(elementList, start, 0, inputData)
+      curIndex = startIndex + inputData.length
     }
   } else {
-    const start = startIndex + 1
-    if (startIndex !== endIndex) {
-      draw.spliceElementList(elementList, start, endIndex - startIndex)
-    }
-    formatElementContext(elementList, inputData, startIndex, {
-      editorOptions: draw.getOptions()
-    })
-    draw.spliceElementList(elementList, start, 0, inputData)
-    curIndex = startIndex + inputData.length
+    curIndex = startIndex
   }
-  if (~curIndex) {
+  if (~curIndex && !isComposing) {
     rangeManager.setRange(curIndex, curIndex)
+    // 组合输入期间不渲染,防止单元格分页组合内容跨页导致渲染问题
     draw.render({
       curIndex,
       isSubmitHistory: !isComposing
     })
   }
   if (isComposing) {
-    // 不缓存 elementList 引用，因为表格分页处理可能改变 elementList 结构
-    // 只保存索引，在 removeComposingInput 中使用当前的 elementList
     host.compositionInfo = {
       value: text,
-      startIndex: curIndex - inputData.length,
-      endIndex: curIndex,
+      startIndex: curIndex,
+      endIndex: endIndex,
       defaultStyle
     }
   }
@@ -122,15 +128,22 @@ export function input(data: string, host: CanvasEvent) {
 
 export function removeComposingInput(host: CanvasEvent) {
   if (!host.compositionInfo) return
-  const { startIndex, endIndex } = host.compositionInfo
-  const draw = host.getDraw()
-  // 使用当前的 elementList，因为表格分页处理可能改变了 elementList 的结构
-  const elementList = draw.getElementList()
-  // 确保索引在有效范围内
-  if (startIndex >= 0 && endIndex > startIndex && endIndex <= elementList.length) {
-    elementList.splice(startIndex + 1, endIndex - startIndex)
-  }
-  const rangeManager = draw.getRange()
-  rangeManager.setRange(startIndex, startIndex)
   host.compositionInfo = null
+}
+
+export function composingInputElements(
+  host: CanvasEvent,
+  elementList: IElement[]
+) {
+  if (!host.compositionInfo || host.isComposing) return elementList
+  const { startIndex, endIndex } = host.compositionInfo
+  if (startIndex !== endIndex) {
+    host.getDraw().removeSplitTdOtherRangeElements()
+    host
+      .getDraw()
+      .spliceElementList(elementList, startIndex + 1, endIndex - startIndex)
+    host.getDraw().getRange().setRange(startIndex, startIndex)
+  }
+  host.compositionInfo = null
+  return elementList
 }

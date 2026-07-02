@@ -13,7 +13,8 @@ import {
   IRangeElementStyle,
   IRangeParagraphInfo,
   RangeRowArray,
-  RangeRowMap
+  RangeRowMap,
+  SplitTdRange
 } from '../../interface/Range'
 import { getAnchorElement } from '../../utils/element'
 import { Draw } from '../draw/Draw'
@@ -113,8 +114,13 @@ export class RangeManager {
   }
 
   public getSelection(): IElement[] | null {
-    const { startIndex, endIndex } = this.range
+    const { startIndex, endIndex, splitTdRange } = this.range
     if (startIndex === endIndex) return null
+    if (splitTdRange) {
+      // 跨页单元格选区特殊处理
+      const list = this.draw.getSplitTdValues(splitTdRange.originalId)!
+      return list.slice(splitTdRange.startIndex + 1, splitTdRange.endIndex + 1)
+    }
     const elementList = this.draw.getElementList()
     return elementList.slice(startIndex + 1, endIndex + 1)
   }
@@ -328,16 +334,18 @@ export class RangeManager {
     )
   }
 
-  public getIsPointInRange(x: number, y: number): boolean {
+  public getIsPointInRange(x: number, y: number, curPageNo: number): boolean {
     const { startIndex, endIndex } = this.range
     const positionList = this.position.getPositionList()
     for (let p = startIndex + 1; p <= endIndex; p++) {
       const position = positionList[p]
       if (!position) break
       const {
-        coordinate: { leftTop, rightBottom }
+        coordinate: { leftTop, rightBottom },
+        pageNo
       } = positionList[p]
       if (
+        curPageNo === pageNo &&
         x >= leftTop[0] &&
         x <= rightBottom[0] &&
         y >= leftTop[1] &&
@@ -382,9 +390,11 @@ export class RangeManager {
   }
 
   public getIsCanInput(): boolean {
-    const { startIndex, endIndex } = this.getRange()
+    const {
+      range: { startIndex, endIndex },
+      elementList
+    } = this.getRangeElement()
     if (!~startIndex && !~endIndex) return false
-    const elementList = this.draw.getElementList()
     const startElement = elementList[startIndex]
     if (startIndex === endIndex) {
       return (
@@ -417,7 +427,8 @@ export class RangeManager {
     startTdIndex?: number,
     endTdIndex?: number,
     startTrIndex?: number,
-    endTrIndex?: number
+    endTrIndex?: number,
+    splitTdRange?: SplitTdRange
   ) {
     // 判断光标是否改变
     const isChange = this.getIsRangeChange(
@@ -443,6 +454,7 @@ export class RangeManager {
         startTrIndex ||
         endTrIndex
       )
+      this.range.splitTdRange = splitTdRange
       this.setDefaultStyle(null)
     }
     this.range.zone = this.draw.getZone().getZone()
@@ -605,8 +617,7 @@ export class RangeManager {
   }
 
   public shrinkBoundary(context: IControlContext = {}) {
-    const elementList = context.elementList || this.draw.getElementList()
-    const range = context.range || this.getRange()
+    const { elementList, range } = this.getRangeElement(context)
     const { startIndex, endIndex } = range
     if (!~startIndex && !~endIndex) return
     const startElement = elementList[startIndex]
@@ -651,7 +662,10 @@ export class RangeManager {
         }
       }
       // 向右查找到第一个Value
-      if (startElement.controlComponent === ControlComponent.PREFIX) {
+      if (
+        startElement.controlComponent === ControlComponent.PREFIX ||
+        startElement.controlComponent === ControlComponent.PRE_TEXT
+      ) {
         let index = startIndex + 1
         while (index < elementList.length) {
           const nextElement = elementList[index]
@@ -673,14 +687,14 @@ export class RangeManager {
       }
       // 向左查找到第一个Value
       if (endElement.controlComponent !== ControlComponent.VALUE) {
-        let index = startIndex - 1
+        let index = endIndex - 1
         while (index > 0) {
           const preElement = elementList[index]
           if (
             preElement.controlId !== startElement.controlId ||
             preElement.controlComponent === ControlComponent.VALUE
           ) {
-            range.startIndex = index
+            range.endIndex = index
             break
           } else if (
             preElement.controlComponent === ControlComponent.PLACEHOLDER
@@ -716,5 +730,25 @@ export class RangeManager {
       .map(s => s.value)
       .join('')
       .replace(new RegExp(ZERO, 'g'), '')
+  }
+
+  public getRangeElement(context: IControlContext = {}): {
+    elementList: IElement[]
+    range: { startIndex: number; endIndex: number }
+  } {
+    const elementList = context.elementList || this.draw.getElementList()
+    const range = context.range || this.getRange()
+    const { splitTdRange } = range
+    const result = {
+      elementList,
+      range
+    }
+    if (splitTdRange) {
+      // 跨页单元格
+      result.range = splitTdRange
+      result.elementList =
+        this.draw.getSplitTdValues(splitTdRange.originalId) ?? []
+    }
+    return result
   }
 }

@@ -34,4 +34,12 @@ export interface ITd {
   pagingOriginId?: string // 被拆分到下一页的单元格的原始id
   disabled?: boolean // 内容不可编辑
   deletable?: boolean // 内容不可删除
+  originalId?: string // 原始单元格ID 代表当前单元格是分页时拆分出来的
+  linkTdPrevId?: string // 连接单元格ID(前一个拆分段单元格)
+  linkTdNextId?: string // 连接单元格ID(后一个拆分段单元格)
+  originalRowspan?: number // 拆分前原始的跨行列数
+  valueStartIndex?: number // 原始值拆分的开始索引
+  tableIndex?: number // 表格在全局的索引
+  tableId?: string
+  trId?: string
 }

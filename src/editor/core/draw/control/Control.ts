@@ -69,11 +69,20 @@ import {
 import { IRowElement } from '../../../interface/Row'
 import { RowFlex } from '../../../dataset/enum/Row'
 import { ZERO } from '../../../dataset/constant/Common'
+import { ITd } from '../../../interface/table/Td'
 
 interface IMoveCursorResult {
   newIndex: number
   newElement: IElement
 }
+
+export interface IMergeControlContext {
+  range: IRange
+  elementList: IElement[]
+  tdId?: string
+  fullRange?: IRange
+}
+
 export class Control {
   private controlBorder: ControlBorder
   private draw: Draw
@@ -231,9 +240,11 @@ export class Control {
 
   // 判断选区是否在控件内
   public getIsRangeWithinControl(): boolean {
-    const { startIndex, endIndex } = this.getRange()
+    const {
+      range: { startIndex, endIndex },
+      elementList
+    } = this.range.getRangeElement()
     if (!~startIndex && !~endIndex) return false
-    const elementList = this.getElementList()
     const startElement = elementList[startIndex]
     const endElement = elementList[endIndex]
     if (
@@ -706,7 +717,10 @@ export class Control {
 
   public removeControl(
     startIndex: number,
-    context: IControlContext = {}
+    context: IControlContext & {
+      removePrev?: () => void
+      removeNext?: () => void
+    } = {}
   ): number | null {
     const elementList = context.elementList || this.getElementList()
     const startElement = elementList[startIndex]
@@ -756,13 +770,89 @@ export class Control {
     }
     if (!~leftIndex && !~rightIndex) return startIndex
     leftIndex = ~leftIndex ? leftIndex : 0
+    const leftElement = elementList[leftIndex + 1]
+    const leftControl = leftElement.control
+    const isTextControl =
+      leftControl?.type &&
+      [
+        ControlType.TEXT,
+        ControlType.DATE,
+        ControlType.NUMBER,
+        ControlType.SELECT
+      ].includes(leftControl.type)
+    let isSplitTd = elementList[0]?.type === ElementType.SPLIT_TAG
+
+    if (
+      !context.removeNext &&
+      isTextControl &&
+      (leftElement.controlComponent !== ControlComponent.PREFIX ||
+        leftElement.type === ElementType.SPLIT_TAG)
+    ) {
+      // 第一个元素不是前缀元素
+      if (context.removePrev) {
+        context.removePrev()
+      } else {
+        const curTd = this.draw.getTd()
+        if (curTd) {
+          this.createRemoveControlHandler(curTd, startElement.controlId!, true)
+        }
+      }
+    }
+    if (
+      !context.removePrev &&
+      isTextControl &&
+      elementList[rightIndex].controlComponent !== ControlComponent.POSTFIX
+    ) {
+      // 最后一个元素不是后缀元素
+      if (context.removeNext) {
+        context.removeNext()
+      } else {
+        const curTd = this.draw.getTd()
+        isSplitTd = !!curTd?.linkTdNextId
+        if (curTd) {
+          this.createRemoveControlHandler(curTd, startElement.controlId!, false)
+        }
+      }
+    }
+
     // 删除元素
     this.draw.spliceElementList(
       elementList,
       leftIndex + 1,
       rightIndex - leftIndex
     )
+    if (!context.elementList && isSplitTd && leftIndex === 0) {
+      return this.draw.fixPosition(true) ?? leftIndex
+    }
     return leftIndex
+  }
+
+  private createRemoveControlHandler(
+    curTd: ITd,
+    controlId: string,
+    prev: boolean
+  ) {
+    if (prev) {
+      const prevTd = this.draw.getTdById(curTd!.linkTdPrevId!)
+      if (prevTd && prevTd.value.splice(-1)[0]?.controlId === controlId) {
+        this.removeControl(prevTd.value.length - 1, {
+          elementList: prevTd.value,
+          removePrev: () => {
+            this.createRemoveControlHandler(prevTd, controlId, prev)
+          }
+        })
+      }
+    } else {
+      const nextTd = this.draw.getTdById(curTd!.linkTdNextId!)
+      if (nextTd && nextTd.value[1]?.controlId === controlId) {
+        this.removeControl(1, {
+          elementList: nextTd.value,
+          removeNext: () => {
+            this.createRemoveControlHandler(nextTd, controlId, prev)
+          }
+        })
+      }
+    }
   }
 
   public removePlaceholder(startIndex: number, context: IControlContext = {}) {
@@ -1667,6 +1757,106 @@ export class Control {
       // 后缀偏移量需减去首字符的偏移量，避免重复偏移
       rowElement.left = left - controlFirstElementLeft
       row.width += left - controlFirstElementLeft
+    }
+  }
+
+  mergeControl(context: IControlContext = {}): IMergeControlContext {
+    const elementList = context.elementList || this.getElementList()
+    const range = context.range || this.getRange()
+    const { startIndex } = range
+    const tdId =
+      context.tdId ?? this.draw.getPosition().getPositionContext().tdId
+    const curTd = tdId ? this.draw.getTdById(tdId) : undefined
+    const startElement = elementList[startIndex]
+    if (!startElement?.controlId) {
+      return {
+        range,
+        elementList: [],
+        tdId
+      }
+    }
+    const fullRange: IRange = { startIndex, endIndex: startIndex }
+    const data: IElement[] = []
+    let remove = false
+    // 向左查找
+    let preIndex = startIndex
+    let preTd = curTd
+    let preElementList = elementList
+    while (preIndex >= 0) {
+      const preElement = preElementList[preIndex]
+      if (preElement.controlId !== startElement.controlId) break
+      if (preElement.type !== ElementType.SPLIT_TAG) {
+        data.unshift(preElement)
+        if (remove) {
+          preElementList.splice(preIndex, 1)
+          if (elementList[0].type === ElementType.SPLIT_TAG) {
+            elementList.splice(0, 1)
+          } else {
+            range.startIndex++
+            range.endIndex++
+          }
+          elementList.unshift(preElement)
+        }
+        fullRange.startIndex = preIndex
+      }
+      if (
+        preIndex === 0 &&
+        preElement.controlComponent !== ControlComponent.PREFIX &&
+        preTd?.linkTdPrevId
+      ) {
+        // 末尾元素未结束 分页单元格继续往后找
+        preTd = this.draw.getTdById(preTd.linkTdPrevId!)
+        if (preTd) {
+          preElementList = preTd.value
+          preIndex = preTd.value.length - 1
+          remove = true
+          continue
+        }
+      }
+      preIndex--
+    }
+
+    remove = false
+    // 向右查找
+    let nextIndex = startIndex + 1
+    let nextTd = curTd
+    let nextElementList = elementList
+    while (nextIndex < nextElementList.length) {
+      const nextElement = nextElementList[nextIndex]
+      if (nextElement.controlId !== startElement.controlId) break
+      if (nextElement.type !== ElementType.SPLIT_TAG) {
+        data.push(nextElement)
+        if (remove) {
+          nextElementList.splice(nextIndex, 1)
+          elementList.push(nextElement)
+          nextIndex--
+        }
+      }
+      if (
+        nextIndex === nextElementList.length - 1 &&
+        nextElement.controlComponent !== ControlComponent.POSTFIX &&
+        nextTd?.linkTdNextId
+      ) {
+        // 末尾元素未结束 分页单元格继续往后找
+        nextTd = this.draw.getTdById(nextTd.linkTdNextId)
+        if (nextTd) {
+          nextElementList = nextTd.value
+          nextIndex = 0
+          remove = true
+          continue
+        }
+      }
+      nextIndex++
+    }
+    fullRange.endIndex = fullRange.startIndex + data.length
+    return {
+      range,
+      elementList: elementList,
+      tdId,
+      fullRange: {
+        startIndex: fullRange.startIndex,
+        endIndex: fullRange.endIndex - 2
+      }
     }
   }
 }

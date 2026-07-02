@@ -42,7 +42,8 @@ export function del(evt: KeyboardEvent, host: CanvasEvent) {
   // 可输入性验证
   const rangeManager = draw.getRange()
   if (!rangeManager.getIsCanInput()) return
-  const { startIndex, endIndex, isCrossRowCol } = rangeManager.getRange()
+  const { startIndex, endIndex, isCrossRowCol, splitTdRange } =
+    rangeManager.getRange()
   // 隐藏控件删除
   const elementList = draw.getElementList()
   const control = draw.getControl()
@@ -90,6 +91,7 @@ export function del(evt: KeyboardEvent, host: CanvasEvent) {
       curIndex = index - 1
     } else {
       const isCollapsed = rangeManager.getIsCollapsed()
+      draw.removeSplitTdOtherRangeElements()
       if (!isCollapsed) {
         draw.spliceElementList(
           elementList,
@@ -97,10 +99,30 @@ export function del(evt: KeyboardEvent, host: CanvasEvent) {
           endIndex - startIndex
         )
       } else {
-        if (!elementList[index + 1]) return
-        draw.spliceElementList(elementList, index + 1, 1)
+        if (!elementList[index + 1]) {
+          let end = true
+          if (positionContext.isTable) {
+            const td = draw.getTd()
+            if (td?.linkTdNextId) {
+              // 拆分行 存在下一个td 进行删除
+              const nextTd = draw.getTdById(td.linkTdNextId)
+              if (nextTd) {
+                end = false
+                draw.spliceElementList(nextTd.value, 1, 1)
+              }
+            }
+          }
+          if (end) {
+            return
+          }
+        } else {
+          draw.spliceElementList(elementList, index + 1, 1)
+        }
       }
       curIndex = isCollapsed ? index : startIndex
+      if (curIndex === 0 && splitTdRange) {
+        curIndex = draw.fixPosition(true) ?? curIndex
+      }
     }
   }
   draw.getGlobalEvent().setCanvasEventAbility()

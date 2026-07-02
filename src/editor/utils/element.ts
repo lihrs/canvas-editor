@@ -624,7 +624,9 @@ export function zipElementList(
   options: IZipElementListOption = {}
 ): IElement[] {
   const { extraPickAttrs, isClassifyArea = false, isClone = true } = options
-  const elementList = isClone ? deepClone(payload) : payload
+  const elementList = (isClone ? deepClone(payload) : payload).filter(
+    element => element.type !== ElementType.SPLIT_TAG
+  )
   const zipElementListData: IElement[] = []
   let e = 0
   while (e < elementList.length) {
@@ -729,54 +731,72 @@ export function zipElementList(
     } else if (element.type === ElementType.TABLE) {
       // 分页表格先进行合并
       if (element.pagingId) {
-        const trList = element.trList!
         let tableIndex = e + 1
         let combineCount = 0
         while (tableIndex < elementList.length) {
           const nextElement = elementList[tableIndex]
           if (nextElement.pagingId === element.pagingId) {
-            const nexTrList = nextElement.trList!.filter(tr => !tr.pagingRepeat)
-            // 第一行存在跨页需特殊处理合并
-            const firstTr = nexTrList[0]
-            if (firstTr?.tdList[0]?.pagingOriginId) {
-              for (let f = 0; f < firstTr.tdList.length; f++) {
-                const firstTd = firstTr.tdList[f]
-                // 上一个表格从后遍历追加单元格内容
-                for (let r = trList.length - 1; r >= 0; r--) {
-                  const tr = trList[r]
-                  for (let d = 0; d < tr.tdList.length; d++) {
-                    const td = tr.tdList[d]
-                    if (firstTd.pagingOriginId === td.id) {
-                      // 合并value
-                      for (let e = 0; e < firstTd.value.length; e++) {
-                        const val = firstTd.value[e]
-                        val.tdId = td.id
-                        val.trId = tr.id
-                        val.tableId = element.id
-                        td.value.push(val)
+            const nexTrList = nextElement
+              .trList!.filter(tr => !tr.pagingRepeat)
+              .filter(nexTr => {
+                nexTr.tdList = nexTr.tdList.filter(td => {
+                  // td内容合并
+                  if (td.originalId) {
+                    for (
+                      let trIndex = 0;
+                      trIndex < element.trList!.length;
+                      trIndex++
+                    ) {
+                      const tr = element.trList![trIndex]
+                      const originalTd = tr.tdList.find(
+                        ({ id }) => id === td.originalId
+                      )!
+                      if (originalTd) {
+                        if (td.value[0]?.type === ElementType.SPLIT_TAG) {
+                          // 如果第一个值是拆分单元格标记，则删除
+                          td.value.splice(0, 1)
+                        }
+                        // 合并value
+                        originalTd.value.push(
+                          // 过滤拆分单元格标记
+                          ...td.value
+                            // 更新元素的表格信息
+                            .map(val => {
+                              val.tdId = originalTd.id
+                              val.trId = tr.id
+                              val.tableId = element.id
+                              return val
+                            })
+                        )
+                        originalTd.rowspan =
+                          originalTd.originalRowspan ?? originalTd.rowspan
+                        break
                       }
                     }
+                    return false
                   }
-                }
-              }
-              // 修改合并行及表格高度
-              const height = firstTr.pagingOriginHeight || firstTr.height
-              // 最后一行行高（加上跨页行高）
-              trList[trList.length - 1].height += height
-              // 合并表格高度（(跨行表格高度 - 第一行实际行高) + 第一行内容高度）
-              element.height! += nextElement.height! - firstTr.height + height
-              // 删除跨页行
-              nexTrList.splice(0, 1)
-            }
+                  return true
+                })
+                // 删除空白拆分行
+                return !nexTr.originalId
+              })
+
             element.trList!.push(...nexTrList)
+            // 还原minHeight
+            element.trList?.forEach(
+              tr => (tr.minHeight = tr.originalMinHeight ?? tr.minHeight)
+            )
             tableIndex++
             combineCount++
           } else {
             break
           }
         }
-        e += combineCount
+        if (combineCount) {
+          elementList.splice(e + 1, combineCount)
+        }
       }
+      element.pagingIndex = element.pagingIndex ?? 0
       if (element.trList) {
         for (let t = 0; t < element.trList.length; t++) {
           const tr = element.trList[t]

@@ -74,24 +74,25 @@ export function mousedown(evt: MouseEvent, host: CanvasEvent) {
   ) {
     return
   }
+  const target = evt.target as HTMLDivElement
+  const pageIndex = target.dataset.index
+  // 设置pageNo
+  if (pageIndex) {
+    draw.setPageNo(Number(pageIndex))
+  }
   // 是否是选区拖拽
   if (!host.isAllowDrag) {
     if (!isReadonly && range.startIndex !== range.endIndex) {
       const isPointInRange = rangeManager.getIsPointInRange(
         evt.offsetX,
-        evt.offsetY
+        evt.offsetY,
+        draw.getPageNo()
       )
       if (isPointInRange) {
         setRangeCache(host)
         return
       }
     }
-  }
-  const target = evt.target as HTMLDivElement
-  const pageIndex = target.dataset.index
-  // 设置pageNo
-  if (pageIndex) {
-    draw.setPageNo(Number(pageIndex))
   }
   host.isAllowSelection = true
   // 缓存旧上下文信息

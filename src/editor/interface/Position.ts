@@ -7,6 +7,7 @@ import { ITd } from './table/Td'
 
 export interface ICurrentPosition {
   index: number
+  originalIndex?: number
   x?: number
   y?: number
   isCheckbox?: boolean

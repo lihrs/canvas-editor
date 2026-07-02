@@ -11,6 +11,12 @@ export interface IRange {
   startTrIndex?: number
   endTrIndex?: number
   zone?: EditorZone
+  splitTdRange?: SplitTdRange // 当前选区存在跨分页单元格
+}
+export interface SplitTdRange {
+  originalId: string
+  startIndex: number
+  endIndex: number
 }
 
 export type RangeRowArray = Map<number, number[]>

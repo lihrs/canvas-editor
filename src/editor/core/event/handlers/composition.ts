@@ -12,13 +12,16 @@ function compositionend(host: CanvasEvent, evt: CompositionEvent) {
   const draw = host.getDraw()
   // 不存在值：删除合成输入
   if (!evt.data) {
+    const cancel = host.compositionInfo?.cancel
     removeComposingInput(host)
-    const rangeManager = draw.getRange()
-    const { endIndex: curIndex } = rangeManager.getRange()
-    draw.render({
-      curIndex,
-      isSubmitHistory: false
-    })
+    if (!cancel) {
+      const rangeManager = draw.getRange()
+      const { endIndex: curIndex } = rangeManager.getRange()
+      draw.render({
+        curIndex,
+        isSubmitHistory: false
+      })
+    }
   } else {
     // 存在值：无法触发input事件需手动检测并触发渲染
     if (isFirefox) {
@@ -39,7 +42,14 @@ function compositionend(host: CanvasEvent, evt: CompositionEvent) {
   cursor.clearAgentDomValue()
 }
 
+function compositionCancel(host: CanvasEvent) {
+  if (host.compositionInfo) {
+    host.compositionInfo.cancel = true
+  }
+}
+
 export default {
   compositionstart,
-  compositionend
+  compositionend,
+  compositionCancel
 }

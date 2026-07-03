@@ -324,7 +324,7 @@ export class TableOperate {
           const tr = curTrList[t]
           const tdId = getUUID()
           if (!tr.tdList.filter(td => !td.originalId).length) {
-            break
+            continue
           }
           let insertIndex = tr.tdList.findIndex(
             td => td.colIndex == curColIndex
@@ -422,7 +422,7 @@ export class TableOperate {
           const tr = curTrList[t]
           const tdId = getUUID()
           if (!tr.tdList.filter(td => !td.originalId).length) {
-            break
+            continue
           }
           let insertIndex = tr.tdList.findIndex(
             td => td.colIndex == curColIndex

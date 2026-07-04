@@ -1614,8 +1614,11 @@ export class Draw {
                       const originTd =
                         findTd ??
                         this.tableParticle.findPreRowSpanTd(trList, r, cIdx)!
+                      // 设置lastColspan以跳过跨列的后续列
                       if (findTd) {
                         lastColspan = findTd.colspan
+                      } else if (originTd) {
+                        lastColspan = originTd.colspan
                       }
                       const tdId = getUUID()
                       originTd.originalRowspan = originTd.rowspan
@@ -1625,6 +1628,7 @@ export class Draw {
                             id: tdId,
                             originalId: findTd.originalId ?? findTd.id,
                             linkTdPrevId: findTd.id,
+                            colIndex: cIdx,
                             tdIndex: cIdx,
                             original: originTd
                           }
@@ -1632,8 +1636,8 @@ export class Draw {
                             id: tdId,
                             originalId: originTd.originalId ?? originTd.id,
                             linkTdPrevId: originTd.id,
-                            tdIndex: cIdx,
                             colIndex: cIdx,
+                            tdIndex: cIdx,
                             colspan: 1,
                             rowspan: 1,
                             value: [],
@@ -1679,9 +1683,12 @@ export class Draw {
                     rowList.unshift(deleteTdRow)
                     originTd.mainHeight! -= deleteTdRow.height
                   }
+                  // Clear stale positionList when value changes
+                  originTd.positionList = []
                   const cloneTd = cloneTdList[index]
                   cloneTd.rowList = rowList
                   cloneTd.value = rowList.map(row => row.elementList).flat()
+                  cloneTd.positionList = []
                 })
 
                 // 还原数据
@@ -2248,11 +2255,15 @@ export class Draw {
             this.highlight.render(ctx)
           }
           // 当前元素位置信息记录
+          const positionItem = positionList[curRow.startIndex + j]
+          if (!positionItem) {
+            continue
+          }
           const {
             coordinate: {
               leftTop: [x, y]
             }
-          } = positionList[curRow.startIndex + j]
+          } = positionItem
           // 元素向左偏移量
           const offsetX = element.left || 0
           this.highlight.recordFillInfo(
@@ -2309,12 +2320,18 @@ export class Draw {
         const element = curRow.elementList[j]
         const metrics = element.metrics
         // 当前元素位置信息
+        const positionItem = positionList[curRow.startIndex + j]
+        if (!positionItem) {
+          // positionList可能未同步，跳过绘制
+          index++
+          continue
+        }
         const {
           ascent: offsetY,
           coordinate: {
             leftTop: [x, y]
           }
-        } = positionList[curRow.startIndex + j]
+        } = positionItem
         const preElement = curRow.elementList[j - 1]
         // 元素绘制
         if (
@@ -2605,11 +2622,14 @@ export class Draw {
       }
       // 绘制列表样式
       if (curRow.isList) {
-        this.listParticle.drawListStyle(
-          ctx,
-          curRow,
-          positionList[curRow.startIndex]
-        )
+        const listPosition = positionList[curRow.startIndex]
+        if (listPosition) {
+          this.listParticle.drawListStyle(
+            ctx,
+            curRow,
+            listPosition
+          )
+        }
       }
       // 绘制文字、边框、下划线、删除线
       this.textParticle.complete()
@@ -2629,12 +2649,15 @@ export class Draw {
           tableRangeElement &&
           tableRangeElement.id === tableId
         ) {
-          const {
-            coordinate: {
-              leftTop: [x, y]
-            }
-          } = positionList[curRow.startIndex]
-          this.tableParticle.drawRange(ctx, tableRangeElement, x, y)
+          const rangePosition = positionList[curRow.startIndex]
+          if (rangePosition) {
+            const {
+              coordinate: {
+                leftTop: [x, y]
+              }
+            } = rangePosition
+            this.tableParticle.drawRange(ctx, tableRangeElement, x, y)
+          }
         }
       }
     }

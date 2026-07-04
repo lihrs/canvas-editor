@@ -440,8 +440,11 @@ export class TableParticle {
         }
         // 计算格宽高
         let width = 0
-        for (let col = 0; col < td.colspan; col++) {
-          width += colgroup[col + colIndex].width
+        // 边界检查：确保 colIndex 和 colspan 不会导致数组越界
+        const safeColIndex = Math.min(colIndex, colgroup.length - 1)
+        const safeColspan = Math.min(td.colspan, colgroup.length - safeColIndex)
+        for (let col = 0; col < safeColspan; col++) {
+          width += colgroup[col + safeColIndex].width
         }
         let height = 0
         for (let row = 0; row < td.rowspan; row++) {
@@ -469,17 +472,27 @@ export class TableParticle {
         td.isLastTd = isLastTd
         // 修改当前格clientBox
         td.x = preX
-        // 之前行相同列的高度
+        // 之前行相同列的高度 = 之前所有行高度之和
         let preY = 0
         for (let preR = 0; preR < t; preR++) {
           const preTdList = trList[preR].tdList
           for (let preD = 0; preD < preTdList.length; preD++) {
-            const td = preTdList[preD]
+            const preTd = preTdList[preD]
             if (
-              colIndex >= td.colIndex! &&
-              colIndex < td.colIndex! + td.colspan
-            ) {
-              preY += td.height!
+              colIndex >= preTd.colIndex! &&
+              colIndex < preTd.colIndex! + preTd.colspan
+          ) {
+              // 如果该单元格跨越到当前行或更后面的行，只累加该单元格在之前行的部分高度
+              if (preTd.rowIndex! + preTd.rowspan > t) {
+                // 跨行单元格：累加之前行的部分高度
+                // 找到该单元格在当前行之前占据的行数，计算这些行的高度之和
+                for (let r = preTd.rowIndex!; r < t; r++) {
+                  preY += trList[r].height
+                }
+              } else {
+                // 非跨行单元格：直接累加其高度
+                preY += preTd.height!
+              }
               break
             }
           }
@@ -624,7 +637,9 @@ export class TableParticle {
     colIndex: number
   ): ITd | undefined {
     for (let trIdx = startTrIndex; trIdx >= 0; trIdx--) {
-      const findTd = trList[trIdx].tdList.find(td => td.colIndex === colIndex)
+      const findTd = trList[trIdx].tdList.find(
+        td => td.colIndex! <= colIndex && td.colIndex! + td.colspan > colIndex
+      )
       if (findTd) {
         return findTd
       }

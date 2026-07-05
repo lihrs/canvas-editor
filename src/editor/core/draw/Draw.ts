@@ -1621,12 +1621,14 @@ export class Draw {
                         lastColspan = originTd.colspan
                       }
                       const tdId = getUUID()
-                      originTd.originalRowspan = originTd.rowspan
+                      if (originTd.originalRowspan === undefined) {
+                        originTd.originalRowspan = originTd.rowspan
+                      }
                       return findTd
                         ? {
                             ...findTd,
                             id: tdId,
-                            originalId: findTd.originalId ?? findTd.id,
+                            originalId: findTd.id,
                             linkTdPrevId: findTd.id,
                             colIndex: cIdx,
                             tdIndex: cIdx,
@@ -1634,11 +1636,11 @@ export class Draw {
                           }
                         : {
                             id: tdId,
-                            originalId: originTd.originalId ?? originTd.id,
+                            originalId: originTd.id,
                             linkTdPrevId: originTd.id,
-                            colIndex: cIdx,
+                            colIndex: originTd.colIndex,
                             tdIndex: cIdx,
-                            colspan: 1,
+                            colspan: originTd.colspan,
                             rowspan: 1,
                             value: [],
                             rowList: [],
@@ -1681,7 +1683,7 @@ export class Draw {
                       originTd.value.length - deleteTdRow.elementList.length
                     )
                     rowList.unshift(deleteTdRow)
-                    originTd.mainHeight! -= deleteTdRow.height
+                    originTd.mainHeight! -= deleteTdRow.height / scale
                   }
                   // Clear stale positionList when value changes
                   originTd.positionList = []
@@ -3157,6 +3159,7 @@ export class Draw {
       delete tr.originalMinHeight
       tr.tdList.forEach(td => {
         delete td.linkTdNextId
+        delete td.originalRowspan
       })
     })
   }

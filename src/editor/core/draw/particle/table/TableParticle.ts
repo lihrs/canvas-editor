@@ -695,7 +695,9 @@ export class TableParticle {
           td.mainHeight = curTdHeight
           // 内容高度大于当前单元格高度需增加
           if (td.rowspan > 1) {
-            lastRowSpanId[td.colIndex!] = td.id!
+            for (let c = 0; c < td.colspan; c++) {
+              lastRowSpanId[td.colIndex! + c] = td.id!
+            }
             // 跨行时 记录表格行额外高度
             rowSpanMap[td.id!] = {
               td,

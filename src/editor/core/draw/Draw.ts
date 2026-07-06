@@ -1489,6 +1489,10 @@ export class Draw {
                                 )
                               )
                           )
+                          // 恢复 rowspan 和 originalRowspan
+                          if (td.originalRowspan !== undefined) {
+                            originalTd.originalRowspan = td.originalRowspan
+                          }
                           originalTd.rowspan =
                             originalTd.originalRowspan ?? originalTd.rowspan
                           break
@@ -1632,19 +1636,21 @@ export class Draw {
                             linkTdPrevId: findTd.id,
                             colIndex: cIdx,
                             tdIndex: cIdx,
-                            original: originTd
+                            original: originTd,
+                            originalRowspan: originTd.originalRowspan  // 继承原始的跨行数
                           }
                         : {
                             id: tdId,
                             originalId: originTd.id,
                             linkTdPrevId: originTd.id,
-                            colIndex: originTd.colIndex,
+                            colIndex: cIdx,
                             tdIndex: cIdx,
                             colspan: originTd.colspan,
                             rowspan: 1,
                             value: [],
                             rowList: [],
-                            original: originTd
+                            original: originTd,
+                            originalRowspan: originTd.originalRowspan  // 继承原始的跨行数
                           }
                     })
                     // 过滤跨列单元格 确保colspan都是>0
@@ -1737,8 +1743,14 @@ export class Draw {
                   }
                   originTdList.forEach(td => {
                     if (td.rowspan > 1) {
-                      // rowspan等于剩余行数
-                      const rowspanRemain = td.rowspan - (r - td.trIndex!)
+                      // 保存原始的 rowspan（如果还没有保存）
+                      if (td.originalRowspan === undefined) {
+                        td.originalRowspan = td.rowspan
+                      }
+
+                      // 使用 originalRowspan 计算剩余行数
+                      const rowspanRemain = (td.originalRowspan ?? td.rowspan) - (r - td.trIndex!)
+
                       td.rowspan =
                         r - td.trIndex! + (originTrHasContent ? 1 : 0)
                       const cloneTd = cloneTr.tdList.find(
@@ -1785,11 +1797,16 @@ export class Draw {
               const pagingId = element.pagingId || getUUID()
               element.pagingId = pagingId
 
-              // 追加拆分表格
-              const cloneElement = deepClone(element)
-              cloneElement.originalId = element.originalId ?? element.id
-              cloneElement.pagingId = pagingId
-              cloneElement.pagingIndex = element.pagingIndex! + 1
+              // 追加拆分表格（不使用 deepClone，手动创建新对象，避免丢失 originalRowspan）
+              const cloneElement: IElement = {
+                ...element,
+                id: getUUID(),
+                originalId: element.originalId ?? element.id,
+                pagingId: pagingId,
+                pagingIndex: element.pagingIndex! + 1,
+                trList: []  // 临时设置为空，后面会赋值
+              }
+
               // 处理分页重复表头
               const repeatTrList = trList.filter(tr => tr.pagingRepeat)
               if (repeatTrList.length) {
@@ -1798,7 +1815,7 @@ export class Draw {
                 cloneTrList.unshift(...cloneRepeatTrList)
               }
               cloneElement.trList = cloneTrList
-              cloneElement.id = getUUID()
+
               // 更新表格内部元素的所属信息
               cloneElement.trList?.forEach(tr => {
                 tr.tdList.forEach(td => {
@@ -3159,7 +3176,6 @@ export class Draw {
       delete tr.originalMinHeight
       tr.tdList.forEach(td => {
         delete td.linkTdNextId
-        delete td.originalRowspan
       })
     })
   }

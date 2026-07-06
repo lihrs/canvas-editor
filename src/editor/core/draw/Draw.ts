@@ -1554,18 +1554,27 @@ export class Draw {
           const height = this.getHeight()
           const marginHeight = this.getMainOuterHeight()
           let curPagePreHeight = marginHeight
-          for (let r = 0; r < rowList.length; r++) {
-            const row = rowList[r]
-            const rowOffsetY = row.offsetY || 0
-            if (
-              row.height + curPagePreHeight + rowOffsetY > height ||
-              rowList[r - 1]?.isPageBreak
-            ) {
-              curPagePreHeight = marginHeight + row.height + rowOffsetY
-            } else {
-              curPagePreHeight += row.height + rowOffsetY
+
+          // 如果是拆分出来的表格（pagingIndex > 0），应该在新的一页
+          // 所以 curPagePreHeight 应该从 marginHeight 开始，不需要累加前面的内容
+          if (element.pagingId && element.pagingIndex && element.pagingIndex > 0) {
+            // 拆分表格，从新页开始
+          } else {
+            // 原始表格或非分页表格，正常计算 curPagePreHeight
+            for (let r = 0; r < rowList.length; r++) {
+              const row = rowList[r]
+              const rowOffsetY = row.offsetY || 0
+              if (
+                row.height + curPagePreHeight + rowOffsetY > height ||
+                rowList[r - 1]?.isPageBreak
+              ) {
+                curPagePreHeight = marginHeight + row.height + rowOffsetY
+              } else {
+                curPagePreHeight += row.height + rowOffsetY
+              }
             }
           }
+
           // 当前剩余高度是否能容下当前表格第一行（可拆分）的高度，排除掉表头类型
           const rowMarginHeight = rowMargin * 2
           const firstTrHeight = element.trList![0].height! * scale
@@ -1815,6 +1824,20 @@ export class Draw {
                 cloneTrList.unshift(...cloneRepeatTrList)
               }
               cloneElement.trList = cloneTrList
+
+              // 修复跨行单元格的 rowspan：限制为实际行数
+              // 遍历拆分出的表格，检查每个跨行单元格的 rowspan 是否合理
+              cloneElement.trList?.forEach((tr, trIndex) => {
+                tr.tdList.forEach(td => {
+                  if (td.rowspan > 1) {
+                    // 计算实际可用的最大 rowspan
+                    const maxRowspan = cloneElement.trList!.length - trIndex
+                    if (td.rowspan > maxRowspan) {
+                      td.rowspan = maxRowspan
+                    }
+                  }
+                })
+              })
 
               // 更新表格内部元素的所属信息
               cloneElement.trList?.forEach(tr => {
@@ -2228,10 +2251,17 @@ export class Draw {
       for (let i = 0; i < this.rowList.length; i++) {
         const row = this.rowList[i]
         const rowOffsetY = row.offsetY || 0
-        if (
+
+        // 检查是否包含分页表格（pagingIndex > 0）
+        const tableElement = row.elementList.find(e => e.type === ElementType.TABLE)
+        const isPagedTable = tableElement && tableElement.pagingId && tableElement.pagingIndex && tableElement.pagingIndex > 0
+
+        // 对于分页表格，强制从新页面开始
+        const needNewPage = isPagedTable ||
           row.height + rowOffsetY + pageHeight > height ||
           this.rowList[i - 1]?.isPageBreak
-        ) {
+
+        if (needNewPage) {
           if (Number.isInteger(maxPageNo) && pageNo >= maxPageNo!) {
             this.elementList = this.elementList.slice(0, row.startIndex)
             break

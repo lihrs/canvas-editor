@@ -428,6 +428,65 @@ window.onload = function () {
     recoveryTable()
   }
 
+  // 导出表格数据
+  const exportTableDom = document.querySelector<HTMLDivElement>(
+    '.menu-item__export-table'
+  )!
+  exportTableDom.onclick = function () {
+    console.log('export-table')
+    const tables = instance.command.getTables()
+
+    // 显示表格统计信息
+    const totalCount = tables.header.length + tables.main.length + tables.footer.length
+    if (totalCount === 0) {
+      alert('当前画布中没有表格')
+      return
+    }
+
+    // 整合所有表格并清理格式
+    const allTables = [
+      ...tables.header,
+      ...tables.main,
+      ...tables.footer
+    ].map(table => {
+      // 只保留标准表格格式字段
+      const cleanTable: any = {
+        value: table.value || '',
+        type: table.type,
+        trList: table.trList?.map(tr => ({
+          height: tr.height,
+          tdList: tr.tdList?.map(td => ({
+            colspan: td.colspan,
+            rowspan: td.rowspan,
+            value: (td.value || []).map(element => {
+              // 清理单元格内容，只保留基本文本样式字段
+              const cleanElement: any = {
+                value: element.value
+              }
+              // 保留可选的样式字段
+              if (element.font) cleanElement.font = element.font
+              if (element.size) cleanElement.size = element.size
+              if (element.bold) cleanElement.bold = element.bold
+              if (element.italic) cleanElement.italic = element.italic
+              if (element.underline) cleanElement.underline = element.underline
+              if (element.strikeout) cleanElement.strikeout = element.strikeout
+              if (element.color) cleanElement.color = element.color
+              if (element.highlight) cleanElement.highlight = element.highlight
+              return cleanElement
+            })
+          })) || [],
+          minHeight: tr.minHeight
+        })) || [],
+        width: table.width,
+        height: table.height,
+        colgroup: table.colgroup || []
+      }
+      return cleanTable
+    })
+
+    console.log('导出表格数据:', allTables)
+  }
+
   const imageDom = document.querySelector<HTMLDivElement>('.menu-item__image')!
   const imageFileDom = document.querySelector<HTMLInputElement>('#image')!
   imageDom.onclick = function () {

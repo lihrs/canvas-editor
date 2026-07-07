@@ -1452,6 +1452,22 @@ export class CommandAdapt {
     }
   }
 
+  public getTables(): {
+    header: IElement[]
+    main: IElement[]
+    footer: IElement[]
+  } {
+    const extractTables = (elementList: IElement[]): IElement[] => {
+      return elementList.filter(element => element.type === ElementType.TABLE)
+    }
+
+    return {
+      header: extractTables(this.draw.getHeaderElementList()),
+      main: extractTables(this.draw.getOriginalMainElementList()),
+      footer: extractTables(this.draw.getFooterElementList())
+    }
+  }
+
   public getWordCount(): Promise<number> {
     return this.workerManager.getWordCount()
   }

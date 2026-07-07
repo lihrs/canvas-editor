@@ -468,6 +468,15 @@ ul {
   margin-right: 0;
 }
 
+.menu-item__export-table i {
+  background-image: url('./assets/images/table.svg');
+  cursor: pointer;
+}
+
+.menu-item__export-table:hover i {
+  opacity: 0.8;
+}
+
 .menu-item__hyperlink i {
   background-image: url('./assets/images/hyperlink.svg');
 }

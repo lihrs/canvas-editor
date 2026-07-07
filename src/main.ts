@@ -443,6 +443,7 @@ window.onload = function () {
       return
     }
 
+    console.log('导出表格原数据:', tables.main)
     // 整合所有表格并清理格式
     const allTables = [
       ...tables.header,
@@ -458,6 +459,7 @@ window.onload = function () {
           tdList: tr.tdList?.map(td => ({
             colspan: td.colspan,
             rowspan: td.rowspan,
+            verticalAlign: td.verticalAlign || 'left',
             value: (td.value || []).map(element => {
               // 清理单元格内容，只保留基本文本样式字段
               const cleanElement: any = {
@@ -466,6 +468,7 @@ window.onload = function () {
               // 保留可选的样式字段
               if (element.font) cleanElement.font = element.font
               if (element.size) cleanElement.size = element.size
+              if (element.rowFlex) cleanElement.rowFlex = element.rowFlex
               if (element.bold) cleanElement.bold = element.bold
               if (element.italic) cleanElement.italic = element.italic
               if (element.underline) cleanElement.underline = element.underline

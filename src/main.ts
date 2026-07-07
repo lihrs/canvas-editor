@@ -62,6 +62,10 @@ window.onload = function () {
     },
     options
   )
+  // 将编辑器实例挂载到 window 对象
+  // @ts-ignore
+  window.__CANVAS_EDITOR_INSTANCE__ = instance
+
   console.log('实例: ', instance)
   // cypress使用
   Reflect.set(window, 'editor', instance)

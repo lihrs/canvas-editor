@@ -1840,14 +1840,15 @@ export class Draw {
                         // 拆分点在起始行
                         // 跨行单元格至少占用起始行，所以 rowsInCurrentPage 至少为 1
                         rowsInCurrentPage = 1
-                        rowsInNextPage = td.originalRowspan //
+                        rowsInNextPage = td.originalRowspan - 1
                       } else {
                         // 拆分点不在起始行
                         // 当前页跨越 r - td.trIndex 行
                         // 如果 originTrHasContent = true，再加 1 行（包含当前行）
                         // 如果 originTrHasContent = false，不加（不包含当前行，当前行会被移到下一页）
                         rowsInCurrentPage = r - td.trIndex! + (originTrHasContent ? 1 : 0)
-                        rowsInNextPage = td.originalRowspan - (r - td.trIndex!)
+                        // 下一页的行数 = 原始行数 - 当前页占用的行数
+                        rowsInNextPage = td.originalRowspan - rowsInCurrentPage
                       }
 
                       // DEBUG: 跨行单元格处理
@@ -2010,6 +2011,7 @@ export class Draw {
                       // 第一页占用的行数
                       const rowsInFirstPage = prevTd.rowspan
                       // 第二页应该跨越的剩余行数
+                      // 使用 originalRowspan 而不是 prevTd.rowspan
                       const rowsInSecondPage = td.originalRowspan - rowsInFirstPage
 
                       // 计算实际可用的最大 rowspan（不超过表格剩余行数）
@@ -2047,10 +2049,44 @@ export class Draw {
                 // 遍历 colgroup，检查每一列是否都有对应的单元格
                 const missingCols: number[] = []
                 element.colgroup!.forEach((col, colIndex) => {
-                  const hasCell = tr.tdList.some(td => {
+                  // 检查是否有单元格覆盖当前列
+                  let hasCell = tr.tdList.some(td => {
                     // 检查单元格是否覆盖当前列
-                    return td.colIndex! <= colIndex && td.colIndex! + td.colspan > colIndex
+                    if (td.colIndex! <= colIndex && td.colIndex! + td.colspan > colIndex) {
+                      // 对于跨行单元格，检查是否覆盖当前行
+                      if (td.rowspan > 1) {
+                        // 跨行单元格的起始行索引（在当前拆分表格中）
+                        // 由于 trIndex 是原始表格中的索引，需要找到它在当前表格中的相对位置
+                        // 但更简单的方法是：检查当前行是否在跨行范围内
+                        // 跨行单元格总是从它所在的行开始，跨越 rowspan 行
+                        // 所以只需要检查 td 是否在当前行，或者是否是从前面的行跨越过来的
+
+                        // 简化逻辑：如果单元格在当前行的 tdList 中，且 rowspan > 1，
+                        // 说明它是跨行单元格的起始行，会覆盖后续的 rowspan-1 行
+                        return true
+                      }
+                      return true
+                    }
+                    return false
                   })
+
+                  // 如果当前列没有单元格，检查是否被前面的跨行单元格覆盖
+                  if (!hasCell) {
+                    // 向前查找是否有跨行单元格覆盖当前行
+                    for (let i = trIndex - 1; i >= 0; i--) {
+                      const prevTr = cloneElement.trList![i]
+                      const rowspanTd = prevTr.tdList.find(td =>
+                        td.colIndex === colIndex && td.rowspan > (trIndex - i)
+                      )
+                      if (rowspanTd) {
+                        // 找到了覆盖当前行的跨行单元格
+                        console.log(`    rowIndex ${trIndex} colIndex ${colIndex} 被 rowIndex ${i} 的跨行单元格覆盖 (rowspan: ${rowspanTd.rowspan}, 覆盖范围: ${i} - ${i + rowspanTd.rowspan - 1})`)
+                        hasCell = true
+                        break
+                      }
+                    }
+                  }
+
                   if (!hasCell) {
                     missingCols.push(colIndex)
                   }

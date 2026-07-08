@@ -641,7 +641,15 @@ export class TableParticle {
         td => td.colIndex! <= colIndex && td.colIndex! + td.colspan > colIndex
       )
       if (findTd) {
-        return findTd
+        // 检查跨行单元格是否覆盖到当前行
+        // 使用当前的 rowspan 来判断（rowspan 已被修正为当前表格中应跨越的行数）
+        // 跨行单元格从 trIdx 行开始，跨越 findTd.rowspan 行
+        // 覆盖的行范围是 [trIdx, trIdx + findTd.rowspan - 1]
+        const endRow = trIdx + findTd.rowspan - 1
+        if (endRow >= startTrIndex) {
+          return findTd
+        }
+        // 如果跨行单元格不覆盖当前行，继续向前查找
       }
     }
     return undefined

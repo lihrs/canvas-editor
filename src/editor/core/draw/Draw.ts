@@ -2127,10 +2127,14 @@ export class Draw {
                     for (let i = trIndex - 1; i >= 0; i--) {
                       const prevTr = cloneElement.trList![i]
                       const rowspanTd = prevTr.tdList.find(td => {
-                        if (td.colIndex !== colIndex) return false
-                        // 使用当前 rowspan 判断是否覆盖当前行
-                        // td.rowspan 已被修正为当前表格中应跨越的行数
-                        return td.rowspan > (trIndex - i)
+                        // 检查单元格是否跨行覆盖到当前行
+                        if (td.rowspan <= (trIndex - i)) {
+                          return false
+                        }
+                        // 检查单元格是否跨列覆盖到当前列
+                        const colStart = td.colIndex!
+                        const colEnd = colStart + td.colspan - 1
+                        return colIndex >= colStart && colIndex <= colEnd
                       })
                       if (rowspanTd) {
                         // 找到了覆盖当前行的跨行单元格
@@ -2150,13 +2154,20 @@ export class Draw {
                 if (missingCols.length > 0) {
                   console.log(`  rowIndex: ${trIndex} 缺少列: ${missingCols.join(', ')}，添加占位单元格`)
                   missingCols.forEach(colIndex => {
-                    // 查找前一行的相同列位置，看是否有跨行单元格
+                    // 查找前一行的相同列位置，看是否有跨行单元格覆盖当前列
                     let rowspanTd: ITd | undefined
                     for (let i = trIndex - 1; i >= 0; i--) {
                       const prevTr = cloneElement.trList![i]
-                      const found = prevTr.tdList.find(td =>
-                        td.colIndex === colIndex && td.rowspan > 1 && td.rowspan > (trIndex - i)
-                      )
+                      const found = prevTr.tdList.find(td => {
+                        // 检查单元格是否跨行覆盖到当前行
+                        if (td.rowspan <= 1 || td.rowspan <= (trIndex - i)) {
+                          return false
+                        }
+                        // 检查单元格是否跨列覆盖到当前列
+                        const colStart = td.colIndex!
+                        const colEnd = colStart + td.colspan - 1
+                        return colIndex >= colStart && colIndex <= colEnd
+                      })
                       if (found) {
                         rowspanTd = found
                         break

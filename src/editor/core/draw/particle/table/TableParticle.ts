@@ -715,6 +715,7 @@ export class TableParticle {
               extraHeight: curTdHeight
             }
             tdRowspanHeightList.push(curTdHeight)
+            console.log(`  rowIndex ${trIndex} 发现跨行单元格: colIndex=${td.colIndex}, colspan=${td.colspan}, rowspan=${td.rowspan}, 初始extraHeight=${curTdHeight}`)
           } else {
             if (td.height! < curTdHeight) {
               td.height = curTdHeight
@@ -725,18 +726,19 @@ export class TableParticle {
             }
           }
         } else {
-          // 未找到td 说明是跨行单元格
-          const rowSpanTd = rowSpanMap[lastRowSpanId[colIndex]]
-          if (rowSpanTd?.rowSpan[1] == trIndex) {
-            // 当前是跨尾行
-            tdHeightList.push(rowSpanTd.extraHeight)
-          }
+          // 未找到td 说明是跨行单元格覆盖的位置
+          // 这个位置不应该计入当前行的行高计算
+          // 因为它已经被前面的行的跨行单元格占用
+          // 不需要做任何事情，直接跳过
         }
       }
 
       const curTrHeight = Math.max(
         ...(tdHeightList.length ? tdHeightList : tdRowspanHeightList)
       )
+
+      console.log(`rowIndex ${trIndex} 计算: tdHeightList=[${tdHeightList.join(',')}], tdRowspanHeightList=[${tdRowspanHeightList.join(',')}], curTrHeight=${curTrHeight}`)
+
       // 更新跨行单元格额外高度
       Object.values(rowSpanMap).forEach(data => {
         if (data.rowSpan[0] <= trIndex && data.rowSpan[1] >= trIndex) {

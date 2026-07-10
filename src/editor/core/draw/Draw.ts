@@ -1450,6 +1450,7 @@ export class Draw {
         // 表格分页处理进度：https://github.com/Hufe921/canvas-editor/issues/41
         // 查看后续表格是否属于同一个源表格-存在即合并
         if (element.pagingId) {
+          const positionContext = this.position.getPositionContext()
           let tableIndex = i + 1
           let combineCount = 0
           while (tableIndex < elementList.length) {
@@ -1471,6 +1472,33 @@ export class Draw {
                           ({ id }) => id === td.originalId
                         )!
                         if (originalTd) {
+                          // 检查光标是否在被合并的单元格中
+                          if (
+                            positionContext.isTable &&
+                            positionContext.tdId === td.id &&
+                            positionContext.index === tableIndex
+                          ) {
+                            // 光标在被合并的单元格中，需要更新 range 索引
+                            const offset = originalTd.value.length
+                            const { startIndex, endIndex } = this.range.getRange()
+                            console.log('=== 表格合并时更新光标 ===', {
+                              positionContextTdId: positionContext.tdId,
+                              tdId: td.id,
+                              positionContextIndex: positionContext.index,
+                              tableIndex,
+                              offset,
+                              oldStartIndex: startIndex,
+                              newStartIndex: startIndex + offset
+                            })
+                            this.range.setRange(startIndex + offset, endIndex + offset)
+                            // 更新 positionContext 指向合并后的单元格
+                            positionContext.index = i
+                            positionContext.tdId = originalTd.id
+                            positionContext.trId = tr.id
+                            positionContext.tableId = element.id
+                            this.position.setPositionContext(positionContext)
+                          }
+
                           if (td.value[0]?.type === ElementType.SPLIT_TAG) {
                             // 如果第一个值是拆分单元格标记，则删除
                             td.value.splice(0, 1)
@@ -2251,27 +2279,129 @@ export class Draw {
           if (element.pagingId) {
             const positionContext = this.position.getPositionContext()
             if (positionContext.isTable) {
-              // 查找光标所在表格索引（根据trId搜索）
+              // 查找光标所在表格索引（根据trId、tdId或linkTdPrevId搜索）
               let newPositionContextIndex = -1
               let newPositionContextTrIndex = -1
+              let newPositionContextTdIndex = -1
+              let foundTd: ITd | null = null
               let tableIndex = i
+
               while (tableIndex < elementList.length) {
                 const curElement = elementList[tableIndex]
                 if (curElement.pagingId !== element.pagingId) break
-                const trIndex = curElement.trList!.findIndex(
+
+                // 首先尝试通过原始 trId 查找
+                let trIndex = curElement.trList!.findIndex(
                   r => r.id === positionContext.trId
                 )
+
+                // 如果找不到，尝试通过 originalId 查找（行拆分后会有新的 id，但保留 originalId）
+                if (!~trIndex) {
+                  trIndex = curElement.trList!.findIndex(
+                    r => r.originalId === positionContext.trId
+                  )
+                }
+
                 if (~trIndex) {
-                  newPositionContextIndex = tableIndex
-                  newPositionContextTrIndex = trIndex
-                  break
+                  const tr = curElement.trList![trIndex]
+                  // 首先尝试通过原始 tdId 查找
+                  let tdIndex = tr.tdList.findIndex(
+                    td => td.id === positionContext.tdId
+                  )
+
+                  // 如果找不到，尝试通过 linkTdPrevId 查找（单元格拆分后会有新的 id，linkTdPrevId 指向原单元格）
+                  if (!~tdIndex) {
+                    tdIndex = tr.tdList.findIndex(
+                      td => td.linkTdPrevId === positionContext.tdId
+                    )
+                  }
+
+                  // 如果还是找不到，尝试通过 originalId 查找
+                  if (!~tdIndex) {
+                    tdIndex = tr.tdList.findIndex(
+                      td => td.originalId === positionContext.tdId
+                    )
+                  }
+
+                  if (~tdIndex) {
+                    newPositionContextIndex = tableIndex
+                    newPositionContextTrIndex = trIndex
+                    newPositionContextTdIndex = tdIndex
+                    foundTd = tr.tdList[tdIndex]
+                    break
+                  }
                 }
                 tableIndex++
               }
-              if (~newPositionContextIndex) {
+
+              if (~newPositionContextIndex && foundTd) {
+                const newTable = elementList[newPositionContextIndex]
+                const newTr = newTable.trList![newPositionContextTrIndex]
+                const newTd = foundTd
+
+                // 检查是否需要调整 range 索引
+                // 如果找到了拆分后的单元格（通过 linkTdPrevId 或 originalId），需要计算正确的索引
+                let newStartIndex = this.range.getRange().startIndex
+
+                console.log('=== 表格分页后上下文更新 ===', {
+                  newPositionContextIndex,
+                  newPositionContextTrIndex,
+                  newPositionContextTdIndex,
+                  currentStartIndex: newStartIndex,
+                  valueStartIndex: newTd.valueStartIndex,
+                  linkTdPrevId: newTd.linkTdPrevId,
+                  newTdValueLength: newTd.value.length,
+                  newTdPositionListLength: newTd.positionList?.length
+                })
+
+                // 如果新单元格有 valueStartIndex，说明它是拆分后的单元格
+                // 需要根据 valueStartIndex 调整光标位置
+                if (newTd.valueStartIndex !== undefined && newTd.linkTdPrevId) {
+                  // 当前光标位置减去拆分点，得到拆分后单元格中的相对位置
+                  // 但是需要确保结果在有效范围内
+                  const relativeIndex = newStartIndex - newTd.valueStartIndex
+                  console.log('  计算相对索引:', {
+                    newStartIndex,
+                    valueStartIndex: newTd.valueStartIndex,
+                    relativeIndex
+                  })
+                  if (relativeIndex >= 0 && relativeIndex < newTd.value.length) {
+                    newStartIndex = relativeIndex
+                  } else if (newTd.value.length > 0) {
+                    // 如果相对位置无效，使用最后一个有效位置
+                    newStartIndex = newTd.value.length - 1
+                  } else {
+                    newStartIndex = 0
+                  }
+                } else {
+                  // 不是拆分后的单元格，检查索引是否在有效范围内
+                  if (newTd.positionList) {
+                    const maxIndex = newTd.positionList.length - 1
+                    if (maxIndex >= 0 && newStartIndex > maxIndex) {
+                      newStartIndex = maxIndex
+                    }
+                  }
+                }
+
+                console.log('  最终 newStartIndex:', newStartIndex)
+
                 positionContext.index = newPositionContextIndex
                 positionContext.trIndex = newPositionContextTrIndex
+                positionContext.tdIndex = newPositionContextTdIndex
+                positionContext.trId = newTr.id
+                positionContext.tdId = newTd.id
+                positionContext.tableId = newTable.id
                 this.position.setPositionContext(positionContext)
+                this.range.setRange(newStartIndex, newStartIndex)
+              } else {
+                // 如果找不到单元格，可能是表格重新分页后，光标所在的行被移动到了拆分后的表格中
+                // 需要使用 fixPosition 来修复光标位置
+                const list = this.getElementList()
+                const startIndex = this.range.getRange().startIndex
+                if (startIndex >= list.length) {
+                  // 触发 fixPosition 修复
+                  this.fixPosition()
+                }
               }
             }
           }
@@ -3804,41 +3934,95 @@ export class Draw {
       // 渲染完成后修复单元格拆分光标位置
       const list = this.getElementList()
       const startIndex = this.range.getRange().startIndex
-      if (prev || startIndex >= list.length) {
-        // 超出索引时, 需要找到拆分后的单元格 并且将光标改变至正确位置
-        const curTd = this.getTd()
-        const index = positionContext.index! + (prev ? -1 : 1)
+
+      // 检查当前单元格是否存在
+      const curTd = this.getTd()
+
+      // 检查是否需要修复：
+      // 1. prev 为 true（向前查找）
+      // 2. startIndex 超出当前单元格元素列表长度
+      // 3. 当前单元格不存在（可能表格已重新分页）
+      const needsFix = prev || startIndex >= list.length || !curTd
+
+      if (needsFix) {
         const elementList = this.getOriginalElementList()
-        const table = elementList[index]
-        if (!table?.trList) {
-          return
-        }
-        newStartIndex = startIndex - list.length
-        for (let trIndex = 0; trIndex < table.trList!.length; trIndex++) {
-          const tr = table.trList![trIndex]
-          const findTd = tr.tdList.find(td =>
-            prev ? curTd?.linkTdPrevId === td.id : curTd?.id === td.linkTdPrevId
-          )
-          if (findTd) {
-            positionContext.index = index
-            positionContext.trIndex = trIndex
-            positionContext.tableId = table.id
-            positionContext.trId = tr.id
-            positionContext.tdId = findTd?.id
-            newStartIndex = prev
-              ? findTd.value.length - 1
-              : newStartIndex +
-                (findTd.value[0]?.type === ElementType.SPLIT_TAG ? 1 : 0)
-            break
+
+        // 如果当前单元格存在，使用原有逻辑
+        if (curTd) {
+          const index = positionContext.index! + (prev ? -1 : 1)
+          const table = elementList[index]
+          if (!table?.trList) {
+            return
+          }
+          newStartIndex = startIndex - list.length
+          for (let trIndex = 0; trIndex < table.trList!.length; trIndex++) {
+            const tr = table.trList![trIndex]
+            const findTd = tr.tdList.find(td =>
+              prev ? curTd?.linkTdPrevId === td.id : curTd?.id === td.linkTdPrevId
+            )
+            if (findTd) {
+              positionContext.index = index
+              positionContext.trIndex = trIndex
+              positionContext.tableId = table.id
+              positionContext.trId = tr.id
+              positionContext.tdId = findTd?.id
+              newStartIndex = prev
+                ? findTd.value.length - 1
+                : newStartIndex +
+                  (findTd.value[0]?.type === ElementType.SPLIT_TAG ? 1 : 0)
+              break
+            }
+          }
+        } else {
+          // 当前单元格不存在，需要在所有分页表格中搜索
+          // 使用 positionContext.tdId 和 linkTdPrevId 搜索
+          const pagingId = positionContext.tableId ?
+            elementList.find(el => el.id === positionContext.tableId)?.pagingId : null
+
+          if (pagingId) {
+            // 搜索所有具有相同 pagingId 的表格
+            for (let ti = 0; ti < elementList.length; ti++) {
+              const table = elementList[ti]
+              if (table.pagingId !== pagingId || table.type !== ElementType.TABLE) continue
+
+              for (let trIndex = 0; trIndex < table.trList!.length; trIndex++) {
+                const tr = table.trList![trIndex]
+                const findTd = tr.tdList.find(td =>
+                  td.id === positionContext.tdId ||
+                  td.linkTdPrevId === positionContext.tdId ||
+                  td.originalId === positionContext.tdId
+                )
+                if (findTd) {
+                  positionContext.index = ti
+                  positionContext.trIndex = trIndex
+                  positionContext.tableId = table.id
+                  positionContext.trId = tr.id
+                  positionContext.tdId = findTd.id
+
+                  // 计算新的索引
+                  if (findTd.positionList && findTd.positionList.length > 0) {
+                    newStartIndex = Math.min(startIndex, findTd.positionList.length - 1)
+                    if (newStartIndex < 0) newStartIndex = 0
+                  } else {
+                    newStartIndex = 0
+                  }
+                  break
+                }
+              }
+              if (newStartIndex !== undefined) break
+            }
           }
         }
-        this.position.setPositionContext(positionContext)
-        this.range.setRange(newStartIndex, newStartIndex)
-        this.setCursor(newStartIndex)
-        if (newStartIndex === 0) {
-          return this.fixPosition(prev)
+
+        if (newStartIndex !== undefined) {
+          this.position.setPositionContext(positionContext)
+          this.range.setRange(newStartIndex, newStartIndex)
+          this.setCursor(newStartIndex)
+          if (newStartIndex === 0) {
+            return this.fixPosition(prev)
+          }
+          this.updateTableTool()
         }
-        this.updateTableTool()
       }
     }
     return newStartIndex

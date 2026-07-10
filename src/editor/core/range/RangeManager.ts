@@ -395,7 +395,18 @@ export class RangeManager {
       elementList
     } = this.getRangeElement()
     if (!~startIndex && !~endIndex) return false
+
+    // 边界检查：确保索引在有效范围内
+    if (startIndex < 0 || startIndex >= elementList.length) {
+      return false
+    }
+
     const startElement = elementList[startIndex]
+    // 防御性检查：确保元素存在
+    if (!startElement) {
+      return false
+    }
+
     if (startIndex === endIndex) {
       return (
         (startElement.controlComponent !== ControlComponent.PRE_TEXT ||
@@ -404,7 +415,18 @@ export class RangeManager {
         startElement.controlComponent !== ControlComponent.POST_TEXT
       )
     }
+
+    // 边界检查：确保 endIndex 在有效范围内
+    if (endIndex < 0 || endIndex >= elementList.length) {
+      return false
+    }
+
     const endElement = elementList[endIndex]
+    // 防御性检查：确保元素存在
+    if (!endElement) {
+      return false
+    }
+
     // 选区前后不是控件 || 选区前不是控件或是后缀&&选区后不是控件或是后缀 || 选区在控件内
     return (
       (!startElement.controlId && !endElement.controlId) ||

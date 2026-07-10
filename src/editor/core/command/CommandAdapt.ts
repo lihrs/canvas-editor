@@ -1496,20 +1496,32 @@ export class CommandAdapt {
     )
     // 元素信息
     const elementList = this.draw.getElementList()
+
+    // 边界检查：确保索引在有效范围内，如果越界则返回空对象
+    const startElementIndex = isCollapsed ? startIndex : startIndex + 1
     const startElement = pickElementAttr(
-      elementList[isCollapsed ? startIndex : startIndex + 1],
+      elementList[startElementIndex] || { value: '' },
       {
         extraPickAttrs: ['id', 'controlComponent']
       }
     )
-    const endElement = pickElementAttr(elementList[endIndex], {
-      extraPickAttrs: ['id', 'controlComponent']
-    })
+    const endElement = pickElementAttr(
+      elementList[endIndex] || { value: '' },
+      {
+        extraPickAttrs: ['id', 'controlComponent']
+      }
+    )
     // 页码信息、行信息
     const rowList = this.draw.getRowList()
     const positionList = this.position.getPositionList()
     const startPosition = positionList[startIndex]
     const endPosition = positionList[endIndex]
+
+    // 边界检查：如果位置信息不存在，返回 null
+    if (!startPosition || !endPosition) {
+      return null
+    }
+
     const startPageNo = startPosition.pageNo
     const endPageNo = endPosition.pageNo
     const startRowNo = startPosition.rowIndex

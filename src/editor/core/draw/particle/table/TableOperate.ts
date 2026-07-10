@@ -846,19 +846,18 @@ export class TableOperate {
         d++
       }
     }
-    console.log(positionContext)
     // 设置上下文信息
     this.position.setPositionContext({
-      ...positionContext,
+      isTable: true,
+      index: anchorTd.tableIndex ?? positionContext.index,
       trIndex: anchorTd.trIndex,
       trId: anchorTd.trId,
       tdIndex: anchorTd.tdIndex,
-      tdId: anchorTd.id
+      tdId: anchorTd.id,
+      tableId: anchorTd.tableId
     })
     const curIndex = anchorTd.value.length - 1
 
-    console.log(111111)
-    console.log('curIndex', curIndex)
     this.range.setRange(curIndex, curIndex)
     // 重新渲染
     this.draw.render()

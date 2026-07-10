@@ -3564,10 +3564,19 @@ export class Draw {
   }
 
   public getTdByPosition(positionContext: IPositionContext): ITd | null {
-    const { index, trIndex, tdIndex, isTable } = positionContext
+    const { index, trIndex, tdIndex, isTable, tdId } = positionContext
     if (isTable) {
+      // 优先使用 tdId 从 tdMap 获取，这样更可靠
+      if (tdId && this.tdMap.has(tdId)) {
+        return this.tdMap.get(tdId)!
+      }
+      // 降级方案：使用索引查找
       const elementList = this.getOriginalElementList()
-      return elementList[index!].trList![trIndex!].tdList[tdIndex!]
+      const element = elementList[index!]
+      if (element?.trList?.[trIndex!]) {
+        return element.trList[trIndex!].tdList[tdIndex!] || null
+      }
+      return null
     }
     return null
   }

@@ -787,17 +787,30 @@ export class TableOperate {
           const values = td.linkTdNextId
             ? this.draw.getSplitTdValues(td.id!) ?? []
             : td.value
-          // 被合并单元格没内容时忽略换行符
-          const startTdValueIndex = values.length > 1 ? 0 : 1
-          // 复制表格属性后追加
-          for (let d = startTdValueIndex; d < values.length; d++) {
-            const tdElement = values[d]
-            cloneProperty<IElement>(
-              TABLE_CONTEXT_ATTR,
-              anchorElement,
-              tdElement
-            )
-            anchorTd.value.push(tdElement)
+
+          // 检查是否有实际内容（不只是空占位符）
+          const hasActualContent = values.some(v => {
+            // 排除空字符串、零宽空格和拆分标记
+            if (v.value === ZERO || v.type === ElementType.SPLIT_TAG) return false
+            return v.value && v.value.trim()
+          })
+
+          // 只有有实际内容时才追加
+          if (hasActualContent) {
+            // 被合并单元格没内容时忽略换行符
+            const startTdValueIndex = values.length > 1 ? 0 : 1
+            for (let d = startTdValueIndex; d < values.length; d++) {
+              const tdElement = values[d]
+              // 跳过拆分标记和空占位符
+              if (tdElement.type === ElementType.SPLIT_TAG) continue
+              if (tdElement.value === ZERO) continue
+              cloneProperty<IElement>(
+                TABLE_CONTEXT_ATTR,
+                anchorElement,
+                tdElement
+              )
+              anchorTd.value.push(tdElement)
+            }
           }
         }
         // 列合并
@@ -833,6 +846,7 @@ export class TableOperate {
         d++
       }
     }
+    console.log(positionContext)
     // 设置上下文信息
     this.position.setPositionContext({
       ...positionContext,
@@ -842,6 +856,9 @@ export class TableOperate {
       tdId: anchorTd.id
     })
     const curIndex = anchorTd.value.length - 1
+
+    console.log(111111)
+    console.log('curIndex', curIndex)
     this.range.setRange(curIndex, curIndex)
     // 重新渲染
     this.draw.render()

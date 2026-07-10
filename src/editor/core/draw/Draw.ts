@@ -2138,7 +2138,6 @@ export class Draw {
                       })
                       if (rowspanTd) {
                         // 找到了覆盖当前行的跨行单元格
-                        console.log(`    rowIndex ${trIndex} colIndex ${colIndex} 被 rowIndex ${i} 的跨行单元格覆盖 (rowspan: ${rowspanTd.rowspan}, 覆盖范围: ${i} - ${i + rowspanTd.rowspan - 1})`)
                         hasCell = true
                         break
                       }

@@ -715,7 +715,6 @@ export class TableParticle {
               extraHeight: curTdHeight
             }
             tdRowspanHeightList.push(curTdHeight)
-            console.log(`  rowIndex ${trIndex} 发现跨行单元格: colIndex=${td.colIndex}, colspan=${td.colspan}, rowspan=${td.rowspan}, 初始extraHeight=${curTdHeight}`)
           } else {
             if (td.height! < curTdHeight) {
               td.height = curTdHeight
@@ -733,11 +732,42 @@ export class TableParticle {
         }
       }
 
-      const curTrHeight = Math.max(
-        ...(tdHeightList.length ? tdHeightList : tdRowspanHeightList)
-      )
+      // 计算非跨行单元格的最大高度
+      const normalMaxHeight = tdHeightList.length ? Math.max(...tdHeightList) : 0
 
-      console.log(`rowIndex ${trIndex} 计算: tdHeightList=[${tdHeightList.join(',')}], tdRowspanHeightList=[${tdRowspanHeightList.join(',')}], curTrHeight=${curTrHeight}`)
+      // 计算跨行单元格在当前行的分摊高度
+      let rowspanMaxHeight = 0
+      for (const data of Object.values(rowSpanMap)) {
+        // 只处理当前行涉及的跨行单元格
+        if (data.rowSpan[0] <= trIndex && data.rowSpan[1] >= trIndex) {
+          // 跨行单元格的高度分配逻辑：
+          // - 对于跨行单元格的最后一行：分配所有剩余高度
+          // - 对于其他行：使用已有高度或最小高度（不增加额外高度）
+          const isLastRowOfRowspan = data.rowSpan[1] === trIndex
+          if (isLastRowOfRowspan) {
+            // 最后一行分配所有剩余高度
+            rowspanMaxHeight = Math.max(rowspanMaxHeight, data.extraHeight)
+          } else {
+            // 非最后一行：只使用该行已有的高度（保持不变）
+            // 通过 tr.minHeight 确保最小高度
+          }
+        }
+      }
+
+      // 当前行高度：
+      // - 如果有非跨行单元格，使用其最大高度
+      // - 如果是跨行单元格的最后一行，使用剩余高度
+      // - 否则使用最小高度或已有高度
+      let curTrHeight: number
+      if (normalMaxHeight > 0) {
+        curTrHeight = Math.max(normalMaxHeight, rowspanMaxHeight, tr.minHeight || defaultTrMinHeight)
+      } else if (rowspanMaxHeight > 0) {
+        // 最后一行且有剩余高度
+        curTrHeight = Math.max(rowspanMaxHeight, tr.minHeight || defaultTrMinHeight)
+      } else {
+        // 被跨行单元格覆盖的非最后一行，保持最小高度
+        curTrHeight = tr.minHeight || defaultTrMinHeight
+      }
 
       // 更新跨行单元格额外高度
       Object.values(rowSpanMap).forEach(data => {

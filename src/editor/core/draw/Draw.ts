@@ -2324,11 +2324,25 @@ export class Draw {
                   }
 
                   if (~tdIndex) {
-                    newPositionContextIndex = tableIndex
-                    newPositionContextTrIndex = trIndex
-                    newPositionContextTdIndex = tdIndex
-                    foundTd = tr.tdList[tdIndex]
-                    break
+                    const matchedTd = tr.tdList[tdIndex]
+                    // tdId 直接匹配：合并后 positionContext.tdId 可能被覆盖为首页单元格 ID
+                    // 当 range 超出该 td 的 positionList 长度时，说明光标实际内容在后续拆分页中
+                    // 此时应跳过该"陈旧"匹配，继续搜索后续拆分表格
+                    // linkTdPrevId/originalId 匹配：通过拆分链找到的单元格，直接接受
+                    const rangeStartIndex = this.range.getRange().startIndex
+                    if (
+                      matchedTd.id === positionContext.tdId &&
+                      matchedTd.positionList &&
+                      rangeStartIndex >= matchedTd.positionList.length
+                    ) {
+                      // 陈旧匹配，跳过继续搜索
+                    } else {
+                      newPositionContextIndex = tableIndex
+                      newPositionContextTrIndex = trIndex
+                      newPositionContextTdIndex = tdIndex
+                      foundTd = matchedTd
+                      break
+                    }
                   }
                 }
                 tableIndex++
@@ -2395,13 +2409,8 @@ export class Draw {
                 this.range.setRange(newStartIndex, newStartIndex)
               } else {
                 // 如果找不到单元格，可能是表格重新分页后，光标所在的行被移动到了拆分后的表格中
-                // 需要使用 fixPosition 来修复光标位置
-                const list = this.getElementList()
-                const startIndex = this.range.getRange().startIndex
-                if (startIndex >= list.length) {
-                  // 触发 fixPosition 修复
-                  this.fixPosition()
-                }
+                // 使用 fixPosition 来修复光标位置
+                this.fixPosition()
               }
             }
           }
@@ -3976,8 +3985,27 @@ export class Draw {
         } else {
           // 当前单元格不存在，需要在所有分页表格中搜索
           // 使用 positionContext.tdId 和 linkTdPrevId 搜索
-          const pagingId = positionContext.tableId ?
-            elementList.find(el => el.id === positionContext.tableId)?.pagingId : null
+          let pagingId: string | null | undefined = positionContext.tableId
+            ? elementList.find(el => el.id === positionContext.tableId)?.pagingId
+            : null
+
+          // 如果通过 tableId 查找失败（表格已被合并），通过 tdId 在各表格中搜索 pagingId
+          if (!pagingId && positionContext.tdId) {
+            for (const el of elementList) {
+              if (el.type !== ElementType.TABLE || !el.pagingId || !el.trList) continue
+              for (const tr of el.trList) {
+                if (tr.tdList.some(td =>
+                  td.id === positionContext.tdId ||
+                  td.linkTdPrevId === positionContext.tdId ||
+                  td.originalId === positionContext.tdId
+                )) {
+                  pagingId = el.pagingId
+                  break
+                }
+              }
+              if (pagingId) break
+            }
+          }
 
           if (pagingId) {
             // 搜索所有具有相同 pagingId 的表格

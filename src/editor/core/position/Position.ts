@@ -57,10 +57,18 @@ export class Position {
     sourceElementList: IElement[]
   ): IElementPosition[] {
     const { index, trIndex, tdIndex } = this.positionContext
-    return (
-      sourceElementList[index!].trList![trIndex!].tdList[tdIndex!]
-        .positionList || []
-    )
+    if (index === undefined || trIndex === undefined || tdIndex === undefined) {
+      return []
+    }
+    const table = sourceElementList[index]
+    if (!table?.trList) {
+      return []
+    }
+    const tr = table.trList[trIndex]
+    if (!tr?.tdList) {
+      return []
+    }
+    return tr.tdList[tdIndex]?.positionList || []
   }
 
   public getPositionList(): IElementPosition[] {

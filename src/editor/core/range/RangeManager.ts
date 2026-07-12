@@ -527,7 +527,8 @@ export class RangeManager {
       // 单元格选择以当前表格定位
       const originalElementList = this.draw.getOriginalElementList()
       const positionContext = this.position.getPositionContext()
-      curElement = originalElementList[positionContext.index!]
+      if (positionContext.index === undefined) return
+      curElement = originalElementList[positionContext.index]
     } else {
       const index = ~endIndex ? endIndex : 0
       // 行首以第一个非换行符元素定位

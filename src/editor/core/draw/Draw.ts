@@ -666,9 +666,18 @@ export class Draw {
   public getTableElementList(sourceElementList: IElement[]): IElement[] {
     const positionContext = this.position.getPositionContext()
     const { index, trIndex, tdIndex } = positionContext
-    return (
-      sourceElementList[index!].trList?.[trIndex!].tdList[tdIndex!].value || []
-    )
+    if (index === undefined || trIndex === undefined || tdIndex === undefined) {
+      return []
+    }
+    const table = sourceElementList[index]
+    if (!table?.trList) {
+      return []
+    }
+    const tr = table.trList[trIndex]
+    if (!tr?.tdList) {
+      return []
+    }
+    return tr.tdList[tdIndex]?.value || []
   }
 
   public getElementList(): IElement[] {
@@ -708,11 +717,19 @@ export class Draw {
   public getTd(): ITd | null {
     const positionContext = this.position.getPositionContext()
     const { index, trIndex, tdIndex, isTable } = positionContext
-    if (isTable) {
-      const elementList = this.getOriginalElementList()
-      return elementList[index!].trList![trIndex!].tdList[tdIndex!]
+    if (!isTable || index === undefined || trIndex === undefined || tdIndex === undefined) {
+      return null
     }
-    return null
+    const elementList = this.getOriginalElementList()
+    const table = elementList[index]
+    if (!table?.trList) {
+      return null
+    }
+    const tr = table.trList[trIndex]
+    if (!tr?.tdList) {
+      return null
+    }
+    return tr.tdList[tdIndex] || null
   }
 
   public insertElementList(
@@ -3413,7 +3430,9 @@ export class Draw {
     if (isCrossRowCol) {
       // 单元格选择以当前表格定位
       const originalElementList = this.getOriginalElementList()
-      curElement = originalElementList[positionContext.index!]
+      curElement = positionContext.index !== undefined
+        ? originalElementList[positionContext.index]
+        : null
     } else {
       const index = ~endIndex ? endIndex : 0
       // 行首以第一个非换行符元素定位
@@ -3939,7 +3958,7 @@ export class Draw {
   public fixPosition(prev = false): number | undefined {
     let newStartIndex: number | undefined = undefined
     const positionContext = this.position.getPositionContext()
-    if (positionContext.isTable) {
+    if (positionContext.isTable && positionContext.index !== undefined) {
       // 渲染完成后修复单元格拆分光标位置
       const list = this.getElementList()
       const startIndex = this.range.getRange().startIndex

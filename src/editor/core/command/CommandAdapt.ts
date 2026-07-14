@@ -1,6 +1,7 @@
 import { NBSP, WRAP, ZERO } from '../../dataset/constant/Common'
 import {
   AREA_CONTEXT_ATTR,
+  EDITOR_ELEMENT_PARAGRAPH_STYLE_ATTR,
   EDITOR_ELEMENT_STYLE_ATTR,
   EDITOR_ROW_ATTR,
   LIST_CONTEXT_ATTR,
@@ -58,12 +59,15 @@ import {
   ISetValueOption,
   IUpdateOption
 } from '../../interface/Editor'
+import { IColumnOption } from '../../interface/Column'
 import {
   IDeleteElementByIdOption,
   IElement,
   IElementPosition,
   IElementStyle,
   IGetElementByIdOption,
+  IImageCaption,
+  IImageCrop,
   IInsertElementListOption,
   IUpdateElementByIdOption
 } from '../../interface/Element'
@@ -77,7 +81,11 @@ import {
 import { IMargin } from '../../interface/Margin'
 import { ILocationPosition, IPositionContext } from '../../interface/Position'
 import { IRange, RangeContext, RangeRect } from '../../interface/Range'
-import { IReplaceOption, ISearchResultContext } from '../../interface/Search'
+import {
+  IReplaceOption,
+  ISearchOption,
+  ISearchResultContext
+} from '../../interface/Search'
 import { ITextDecoration } from '../../interface/Text'
 import {
   IGetTitleValueOption,
@@ -92,6 +100,7 @@ import {
   isNumber,
   isObjectEqual
 } from '../../utils'
+import { getParagraphNo } from '../../utils/paragraph'
 import {
   createDomFromElementList,
   formatElementContext,
@@ -101,10 +110,11 @@ import {
   getElementListByHTML,
   getTextFromElementList,
   zipElementList,
-  getAnchorElement
+  getAnchorElement,
+  pickSurroundElementList
 } from '../../utils/element'
 import { mergeOption } from '../../utils/option'
-import { printImageBase64 } from '../../utils/print'
+import { print } from '../../utils/print'
 import { Control } from '../draw/control/Control'
 import { Draw } from '../draw/Draw'
 import { INavigateInfo, Search } from '../draw/interactive/Search'
@@ -122,11 +132,14 @@ import {
   IGetAreaValueResult,
   IInsertAreaOption,
   ILocationAreaOption,
+  IDeleteAreaOption,
   ISetAreaPropertiesOption,
   ISetAreaValueOption
 } from '../../interface/Area'
 import { IAreaBadge, IBadge } from '../../interface/Badge'
 import { IRichtextOption } from '../../interface/Command'
+import { WatermarkType } from '../../dataset/enum/Watermark'
+import { IPrintOption } from '@/editor/interface/Print'
 
 export class CommandAdapt {
   private draw: Draw
@@ -161,14 +174,14 @@ export class CommandAdapt {
     this.draw.setMode(payload)
   }
 
-  public cut() {
+  public async cut() {
     const isDisabled = this.draw.isReadonly() || this.draw.isDisabled()
     if (isDisabled) return
-    this.canvasEvent.cut()
+    await this.canvasEvent.cut()
   }
 
-  public copy(payload?: ICopyOption) {
-    this.canvasEvent.copy(payload)
+  public async copy(payload?: ICopyOption) {
+    await this.canvasEvent.copy(payload)
   }
 
   public paste(payload?: IPasteOption) {
@@ -288,6 +301,10 @@ export class CommandAdapt {
     this.draw.getCursor().recoveryCursor()
   }
 
+  public hideCursor() {
+    this.draw.getCursor().recoveryCursor()
+  }
+
   public undo() {
     const isReadonly = this.draw.isReadonly()
     if (isReadonly) return
@@ -310,11 +327,14 @@ export class CommandAdapt {
     if (!selection) return
     const painterStyle: IElementStyle = {}
     selection.forEach(s => {
-      const painterStyleKeys = EDITOR_ELEMENT_STYLE_ATTR
+      const painterStyleKeys = [
+        ...EDITOR_ELEMENT_STYLE_ATTR,
+        ...EDITOR_ELEMENT_PARAGRAPH_STYLE_ATTR
+      ]
       painterStyleKeys.forEach(p => {
         const key = p as keyof typeof ElementStyleKey
         if (painterStyle[key] === undefined) {
-          painterStyle[key] = s[key] as any
+          Reflect.set(painterStyle, key, s[key])
         }
       })
     })
@@ -342,6 +362,7 @@ export class CommandAdapt {
       renderOption = { isSetCursor: false }
     } else {
       const { endIndex } = this.range.getRange()
+      if (!~endIndex) return
       const elementList = this.draw.getElementList()
       const enterElement = elementList[endIndex]
       if (enterElement?.value === ZERO) {
@@ -373,6 +394,7 @@ export class CommandAdapt {
     } else {
       let isSubmitHistory = true
       const { endIndex } = this.range.getRange()
+      if (!~endIndex) return
       const elementList = this.draw.getElementList()
       const enterElement = elementList[endIndex]
       this.range.setDefaultStyle({
@@ -408,6 +430,7 @@ export class CommandAdapt {
       renderOption = { isSetCursor: false }
     } else {
       const { endIndex } = this.range.getRange()
+      if (!~endIndex) return
       const elementList = this.draw.getElementList()
       const enterElement = elementList[endIndex]
       this.range.setDefaultStyle({
@@ -457,6 +480,7 @@ export class CommandAdapt {
       renderOption = { isSetCursor: false }
     } else {
       const { endIndex } = this.range.getRange()
+      if (!~endIndex) return
       const elementList = this.draw.getElementList()
       const enterElement = elementList[endIndex]
       // 设置默认样式
@@ -511,6 +535,7 @@ export class CommandAdapt {
       renderOption = { isSetCursor: false }
     } else {
       const { endIndex } = this.range.getRange()
+      if (!~endIndex) return
       const elementList = this.draw.getElementList()
       const enterElement = elementList[endIndex]
       const style = this.range.getDefaultStyle()
@@ -564,6 +589,7 @@ export class CommandAdapt {
     } else {
       let isSubmitHistory = true
       const { endIndex } = this.range.getRange()
+      if (!~endIndex) return
       const elementList = this.draw.getElementList()
       const enterElement = elementList[endIndex]
       this.range.setDefaultStyle({
@@ -598,6 +624,7 @@ export class CommandAdapt {
     } else {
       let isSubmitHistory = true
       const { endIndex } = this.range.getRange()
+      if (!~endIndex) return
       const elementList = this.draw.getElementList()
       const enterElement = elementList[endIndex]
       this.range.setDefaultStyle({
@@ -654,6 +681,7 @@ export class CommandAdapt {
     } else {
       let isSubmitHistory = true
       const { endIndex } = this.range.getRange()
+      if (!~endIndex) return
       const elementList = this.draw.getElementList()
       const enterElement = elementList[endIndex]
       this.range.setDefaultStyle({
@@ -693,6 +721,7 @@ export class CommandAdapt {
     } else {
       let isSubmitHistory = true
       const { endIndex } = this.range.getRange()
+      if (!~endIndex) return
       const elementList = this.draw.getElementList()
       const enterElement = elementList[endIndex]
       this.range.setDefaultStyle({
@@ -799,6 +828,7 @@ export class CommandAdapt {
     } else {
       let isSubmitHistory = true
       const { endIndex } = this.range.getRange()
+      if (!~endIndex) return
       const elementList = this.draw.getElementList()
       const enterElement = elementList[endIndex]
       this.range.setDefaultStyle({
@@ -843,6 +873,7 @@ export class CommandAdapt {
     } else {
       let isSubmitHistory = true
       const { endIndex } = this.range.getRange()
+      if (!~endIndex) return
       const elementList = this.draw.getElementList()
       const enterElement = elementList[endIndex]
       this.range.setDefaultStyle({
@@ -946,7 +977,7 @@ export class CommandAdapt {
   public insertTable(row: number, col: number) {
     const isDisabled = this.draw.isReadonly() || this.draw.isDisabled()
     if (isDisabled) return
-    const activeControl = this.control.getActiveControl()
+    const activeControl = this.control.getIsRangeWithinControl()
     if (activeControl) return
     this.tableOperate.insertTable(row, col)
   }
@@ -1057,36 +1088,26 @@ export class CommandAdapt {
     this.tableOperate.tableSelectAll()
   }
 
-  public hyperlink(payload: IElement) {
+  public hyperlink(
+    payload: Pick<IElement, 'valueList' | 'hyperlinkId' | 'url'>
+  ) {
+    const { valueList, url, hyperlinkId } = payload
+    if (!url || !valueList?.length) return
     const isDisabled = this.draw.isReadonly() || this.draw.isDisabled()
     if (isDisabled) return
-    const activeControl = this.control.getActiveControl()
+    const activeControl = this.control.getIsRangeWithinControl()
     if (activeControl) return
     const { startIndex, endIndex } = this.range.getRange()
     if (!~startIndex && !~endIndex) return
-    const elementList = this.draw.getElementList()
-    const { valueList, url } = payload
-    const hyperlinkId = getUUID()
-    const newElementList = valueList?.map<IElement>(v => ({
-      url,
-      hyperlinkId,
-      value: v.value,
-      type: ElementType.HYPERLINK
-    }))
-    if (!newElementList) return
-    const start = startIndex + 1
-    formatElementContext(elementList, newElementList, startIndex, {
-      editorOptions: this.options
-    })
-    this.draw.spliceElementList(
-      elementList,
-      start,
-      startIndex === endIndex ? 0 : endIndex - startIndex,
-      newElementList
-    )
-    const curIndex = start + newElementList.length - 1
-    this.range.setRange(curIndex, curIndex)
-    this.draw.render({ curIndex })
+    this.insertElementList([
+      {
+        type: ElementType.HYPERLINK,
+        value: '',
+        valueList,
+        url,
+        hyperlinkId: hyperlinkId || getUUID()
+      }
+    ])
   }
 
   public getHyperlinkRange(): [number, number] | null {
@@ -1099,7 +1120,8 @@ export class CommandAdapt {
     if (startElement.type !== ElementType.HYPERLINK) return null
     // 向左查找
     let preIndex = startIndex
-    while (preIndex > 0) {
+    // 确保循环到第一个元素：避免超链接在开头
+    while (preIndex >= 0) {
       const preElement = elementList[preIndex]
       if (preElement.hyperlinkId !== startElement.hyperlinkId) {
         leftIndex = preIndex + 1
@@ -1109,17 +1131,14 @@ export class CommandAdapt {
     }
     // 向右查找
     let nextIndex = startIndex + 1
-    while (nextIndex < elementList.length) {
+    // 确保循环到最后一个元素：避免超链接在最后
+    while (nextIndex <= elementList.length) {
       const nextElement = elementList[nextIndex]
-      if (nextElement.hyperlinkId !== startElement.hyperlinkId) {
+      if (nextElement?.hyperlinkId !== startElement.hyperlinkId) {
         rightIndex = nextIndex - 1
         break
       }
       nextIndex++
-    }
-    // 控件在最后
-    if (nextIndex === elementList.length) {
-      rightIndex = nextIndex - 1
     }
     if (!~leftIndex || !~rightIndex) return null
     return [leftIndex, rightIndex]
@@ -1195,10 +1214,13 @@ export class CommandAdapt {
     })
   }
 
-  public separator(payload: number[]) {
+  public separator(
+    dashArray: number[],
+    option?: { lineWidth?: number; color?: string }
+  ) {
     const isDisabled = this.draw.isReadonly() || this.draw.isDisabled()
     if (isDisabled) return
-    const activeControl = this.control.getActiveControl()
+    const activeControl = this.control.getIsRangeWithinControl()
     if (activeControl) return
     const { startIndex, endIndex } = this.range.getRange()
     if (!~startIndex && !~endIndex) return
@@ -1209,17 +1231,21 @@ export class CommandAdapt {
     if (endElement && endElement.type === ElementType.SEPARATOR) {
       if (
         endElement.dashArray &&
-        endElement.dashArray.join() === payload.join()
+        endElement.dashArray.join() === dashArray.join()
       ) {
         return
       }
       curIndex = endIndex
-      endElement.dashArray = payload
+      Object.assign(endElement, {
+        dashArray,
+        ...option
+      })
     } else {
       const newElement: IElement = {
         value: WRAP,
         type: ElementType.SEPARATOR,
-        dashArray: payload
+        dashArray,
+        ...option
       }
       // 从行头增加分割线
       formatElementContext(elementList, [newElement], startIndex, {
@@ -1242,7 +1268,7 @@ export class CommandAdapt {
   public pageBreak() {
     const isDisabled = this.draw.isReadonly() || this.draw.isDisabled()
     if (isDisabled) return
-    const activeControl = this.control.getActiveControl()
+    const activeControl = this.control.getIsRangeWithinControl()
     if (activeControl) return
     this.insertElementList([
       {
@@ -1256,14 +1282,25 @@ export class CommandAdapt {
     const isReadonly = this.draw.isReadonly()
     if (isReadonly) return
     const options = this.draw.getOptions()
-    const { color, size, opacity, font, gap } = defaultWatermarkOption
+    const { color, size, opacity, font, gap, layer } = defaultWatermarkOption
     options.watermark.data = payload.data
+    options.watermark.type = payload.type || WatermarkType.TEXT
+    if (payload.width) {
+      options.watermark.width = payload.width
+    }
+    if (payload.height) {
+      options.watermark.height = payload.height
+    }
     options.watermark.color = payload.color || color
-    options.watermark.size = payload.size || size
     options.watermark.opacity = payload.opacity || opacity
+    options.watermark.size = payload.size || size
     options.watermark.font = payload.font || font
     options.watermark.repeat = !!payload.repeat
+    if (payload.numberType) {
+      options.watermark.numberType = payload.numberType
+    }
     options.watermark.gap = payload.gap || gap
+    options.watermark.layer = payload.layer || layer
     this.draw.render({
       isSetCursor: false,
       isSubmitHistory: false,
@@ -1301,10 +1338,9 @@ export class CommandAdapt {
     return imageId
   }
 
-  public search(payload: string | null) {
-    this.searchManager.setSearchKeyword(payload)
+  public search(payload: string | null, options?: ISearchOption) {
+    this.searchManager.setSearchKeyword(payload, options)
     this.draw.render({
-      isSetCursor: false,
       isSubmitHistory: false
     })
   }
@@ -1339,7 +1375,28 @@ export class CommandAdapt {
     this.draw.getSearch().replace(payload, option)
   }
 
-  public async print() {
+  public async print(option?: IPrintOption) {
+    // 离屏渲染支持自定义data和option
+    if (option?.offscreen) {
+      const data = option.data ?? this.draw.getValue().data
+      const options = option.options ?? this.draw.getOptions()
+      const container = document.createElement('div')
+      container.style.position = 'absolute'
+      container.style.left = '-9999px'
+      container.style.top = '0'
+      container.style.visibility = 'hidden'
+      document.body.append(container)
+      const { default: Editor } = await import('../../index')
+      let tempEditor: InstanceType<typeof Editor> | null = null
+      try {
+        tempEditor = new Editor(container, data, options)
+        await tempEditor.command.executePrint()
+      } finally {
+        tempEditor?.destroy()
+        container.remove()
+      }
+      return
+    }
     const { scale, printPixelRatio, paperDirection, width, height } =
       this.options
     if (scale !== 1) {
@@ -1349,10 +1406,11 @@ export class CommandAdapt {
       pixelRatio: printPixelRatio,
       mode: EditorMode.PRINT
     })
-    printImageBase64(base64List, {
+    await print(base64List, {
       width,
       height,
-      direction: paperDirection
+      direction: paperDirection,
+      iframeInfoList: this.draw.getBlockParticle().pickIframeInfo()
     })
     if (scale !== 1) {
       this.draw.setPageScale(scale)
@@ -1378,6 +1436,29 @@ export class CommandAdapt {
     downloadFile(element.value, `${element.id!}.png`)
   }
 
+  public setImageCrop(crop: IImageCrop) {
+    const { startIndex } = this.range.getRange()
+    const elementList = this.draw.getElementList()
+    const element = elementList[startIndex]
+    if (!element || element.type !== ElementType.IMAGE) return
+    element.imgCrop = crop
+    this.draw.render({
+      isSetCursor: false,
+      isCompute: false
+    })
+  }
+
+  public setImageCaption(imgCaption: IImageCaption) {
+    const { startIndex } = this.range.getRange()
+    const elementList = this.draw.getElementList()
+    const element = elementList[startIndex]
+    if (element?.type !== ElementType.IMAGE) return
+    element.imgCaption = imgCaption
+    this.draw.render({
+      isSetCursor: false
+    })
+  }
+
   public changeImageDisplay(element: IElement, display: ImageDisplay) {
     if (element.imgDisplay === display) return
     element.imgDisplay = display
@@ -1388,14 +1469,19 @@ export class CommandAdapt {
       display === ImageDisplay.FLOAT_BOTTOM
     ) {
       const positionList = this.position.getPositionList()
+      const positionContext = this.position.getPositionContext()
       const {
         pageNo,
         coordinate: { leftTop }
       } = positionList[startIndex]
+      const tablePosition = positionContext.isTable
+        ? this.position.getOriginalPositionList()[positionContext.index!]
+        : null
+      const tableLeftTop = tablePosition?.coordinate.leftTop
       element.imgFloatPosition = {
         pageNo,
-        x: leftTop[0],
-        y: leftTop[1]
+        x: tableLeftTop ? leftTop[0] - tableLeftTop[0] : leftTop[0],
+        y: tableLeftTop ? leftTop[1] - tableLeftTop[1] : leftTop[1]
       }
     } else {
       delete element.imgFloatPosition
@@ -1474,6 +1560,42 @@ export class CommandAdapt {
 
   public getCursorPosition(): IElementPosition | null {
     return this.position.getCursorPosition()
+  }
+
+  public getRemainingContentHeight(): number {
+    if (!this.draw.getIsPagingMode()) return 0
+    const pageRowList = this.draw.getPageRowList()
+    const lastPageIndex = pageRowList.length - 1
+    const rowList = pageRowList[lastPageIndex] || []
+    const usedHeight = rowList.reduce(
+      (pre, cur) => pre + cur.height + (cur.offsetY || 0),
+      0
+    )
+    const height = this.draw.getHeight()
+    const mainOuterHeight = this.draw.getMainOuterHeight(lastPageIndex)
+    const remaining = height - (mainOuterHeight + usedHeight)
+    return remaining > 0 ? remaining : 0
+  }
+
+  public computeElementListHeight(elementList: IElement[]): number {
+    if (!elementList.length) return 0
+    const innerWidth = this.draw.getInnerWidth()
+    if (innerWidth <= 0) return 0
+    const targetElementList = deepClone(elementList)
+    formatElementList(targetElementList, {
+      isHandleFirstElement: false,
+      editorOptions: this.options
+    })
+    const surroundElementList = pickSurroundElementList(targetElementList)
+    const rowList = this.draw.computeRowList({
+      innerWidth,
+      elementList: targetElementList,
+      surroundElementList
+    })
+    return rowList.reduce(
+      (pre, cur) => pre + cur.height + (cur.offsetY || 0),
+      0
+    )
   }
 
   public getRange(): IRange {
@@ -1629,6 +1751,12 @@ export class CommandAdapt {
       }
       start--
     }
+    // 段落索引
+    const startParagraphNo = getParagraphNo(elementList, startIndex)
+    const endParagraphNo =
+      startIndex === endIndex
+        ? startParagraphNo
+        : getParagraphNo(elementList, endIndex)
     return deepClone<RangeContext>({
       isCollapsed,
       startElement,
@@ -1648,7 +1776,9 @@ export class CommandAdapt {
       selectionText,
       selectionElementList,
       titleId,
-      titleStartPageNo
+      titleStartPageNo,
+      startParagraphNo,
+      endParagraphNo
     })
   }
 
@@ -1699,6 +1829,24 @@ export class CommandAdapt {
 
   public pageMode(payload: PageMode) {
     this.draw.setPageMode(payload)
+  }
+
+  public setColumns(config: IColumnOption | null) {
+    this.draw.setColumnConfig(config)
+    this.draw.render({
+      isSubmitHistory: false,
+      isSetCursor: false
+    })
+  }
+
+  public getColumns(): IColumnOption | null {
+    const layout = this.draw.getColumnLayout()
+    if (!layout) return null
+    return {
+      count: layout.count,
+      gap: layout.gap,
+      separator: layout.separator
+    }
   }
 
   public pageScale(scale: number) {
@@ -1768,7 +1916,7 @@ export class CommandAdapt {
     if (!payload.length) return
     const isDisabled = this.draw.isReadonly() || this.draw.isDisabled()
     if (isDisabled) return
-    const { isReplace = true } = options
+    const { isReplace = true, ignoreContextKeys } = options
     // 如果配置不替换时，需收缩选区至末尾
     if (!isReplace) {
       this.range.shrinkRange()
@@ -1778,6 +1926,7 @@ export class CommandAdapt {
     const { startIndex } = this.range.getRange()
     const elementList = this.draw.getElementList()
     formatElementContext(elementList, cloneElementList, startIndex, {
+      ignoreContextKeys,
       isBreakWhenWrap: true,
       editorOptions: this.options
     })
@@ -1842,24 +1991,37 @@ export class CommandAdapt {
       const { elementList, index } = updateElementInfoList[i]
       // 重新格式化元素
       const oldElement = elementList[index]
-      const newElement = zipElementList(
-        [
-          {
-            ...oldElement,
-            ...payload.properties
-          }
-        ],
-        {
-          extraPickAttrs: ['id']
+      // 简易独立元素直接修改属性，不走格式化
+      if (
+        oldElement.type === ElementType.BLOCK ||
+        oldElement.type === ElementType.IMAGE ||
+        oldElement.type === ElementType.LATEX
+      ) {
+        elementList[index] = {
+          ...oldElement,
+          ...payload.properties,
+          type: oldElement.type
         }
-      )
-      // 区域上下文提取
-      cloneProperty<IElement>(AREA_CONTEXT_ATTR, oldElement, newElement[0])
-      formatElementList(newElement, {
-        isHandleFirstElement: false,
-        editorOptions: this.options
-      })
-      elementList[index] = newElement[0]
+      } else {
+        const newElement = zipElementList(
+          [
+            {
+              ...oldElement,
+              ...payload.properties
+            }
+          ],
+          {
+            extraPickAttrs: ['id']
+          }
+        )
+        // 区域上下文提取
+        cloneProperty<IElement>(AREA_CONTEXT_ATTR, oldElement, newElement[0])
+        formatElementList(newElement, {
+          isHandleFirstElement: false,
+          editorOptions: this.options
+        })
+        elementList[index] = newElement[0]
+      }
     }
     this.draw.render({
       isSetCursor: false
@@ -2168,14 +2330,10 @@ export class CommandAdapt {
   }
 
   public setGroup(): string | null {
-    const isReadonly = this.draw.isReadonly()
-    if (isReadonly) return null
     return this.draw.getGroup().setGroup()
   }
 
   public deleteGroup(groupId: string) {
-    const isReadonly = this.draw.isReadonly()
-    if (isReadonly) return
     this.draw.getGroup().deleteGroup(groupId)
   }
 
@@ -2395,6 +2553,12 @@ export class CommandAdapt {
     this.draw.insertElementList([cloneElement])
   }
 
+  public jumpControl(payload?: { direction?: MoveDirection }) {
+    this.draw.getControl().initNextControl({
+      direction: payload?.direction
+    })
+  }
+
   public getContainer(): HTMLDivElement {
     return this.draw.getContainer()
   }
@@ -2596,19 +2760,11 @@ export class CommandAdapt {
       isSetCursor: false,
       isSubmitHistory: false
     }
-    if (~curIndex && this.range.getIsCollapsed()) {
+    if (isMoveCursorToVisible && ~curIndex && this.range.getIsCollapsed()) {
       renderParams.curIndex = curIndex
       renderParams.isSetCursor = true
     }
     this.draw.render(renderParams)
-    // 移动滚动条到可见区域
-    if (isMoveCursorToVisible) {
-      const positionList = this.draw.getPosition().getPositionList()
-      this.draw.getCursor().moveCursorToVisible({
-        cursorPosition: positionList[curIndex],
-        direction: MoveDirection.DOWN
-      })
-    }
   }
 
   public insertArea(payload: IInsertAreaOption) {
@@ -2621,6 +2777,10 @@ export class CommandAdapt {
 
   public setAreaProperties(payload: ISetAreaPropertiesOption) {
     this.draw.getArea().setAreaProperties(payload)
+  }
+
+  public deleteArea(options?: IDeleteAreaOption) {
+    this.draw.getArea().deleteArea(options)
   }
 
   public locationArea(areaId: string, options?: ILocationAreaOption) {
@@ -2647,8 +2807,7 @@ export class CommandAdapt {
     const context = this.draw.getArea().getContextByAreaId(areaId, options)
     if (!context) return
     const {
-      range: { endIndex },
-      elementPosition
+      range: { endIndex }
     } = context
     this.position.setPositionContext({
       isTable: false
@@ -2660,12 +2819,18 @@ export class CommandAdapt {
       isCompute: false,
       isSubmitHistory: false
     })
-    // 移动到可见区域
-    const cursor = this.draw.getCursor()
-    this.position.setCursorPosition(elementPosition)
-    cursor.moveCursorToVisible({
-      cursorPosition: elementPosition,
-      direction: MoveDirection.UP
-    })
+  }
+
+  // 清空涂鸦信息
+  public clearGraffiti() {
+    this.draw.getGraffiti().clear()
+    // 涂鸦模式下重新渲染
+    if (this.draw.isGraffitiMode()) {
+      this.draw.render({
+        isCompute: false,
+        isSetCursor: false,
+        isSubmitHistory: false
+      })
+    }
   }
 }

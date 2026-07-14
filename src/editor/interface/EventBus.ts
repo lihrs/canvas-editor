@@ -2,15 +2,18 @@ import {
   IContentChange,
   IControlChange,
   IControlContentChange,
+  IImageDblclick,
   IImageMousedown,
   IImageSizeChange,
   IInputEventChange,
   IIntersectionPageNoChange,
+  ILabelMousedown,
   IMouseEventChange,
   IPageModeChange,
   IPageScaleChange,
   IPageSizeChange,
   IPositionContextChange,
+  IRangeChange,
   IRangeStyleChange,
   ISaved,
   IVisiblePageNoListChange,
@@ -39,4 +42,7 @@ export interface EventBusMap {
   positionContextChange: IPositionContextChange
   imageSizeChange: IImageSizeChange
   imageMousedown: IImageMousedown
+  imageDblclick: IImageDblclick
+  labelMousedown: ILabelMousedown
+  rangeChange: IRangeChange
 }

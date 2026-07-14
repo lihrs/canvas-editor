@@ -18,9 +18,9 @@ import { Control } from '../Control'
 import { ElementType } from '../../../../dataset/enum/Element'
 
 export class TextControl implements IControlInstance {
-  private element: IElement
-  private control: Control
-  private options: DeepRequired<IEditorOption>
+  protected element: IElement
+  protected control: Control
+  protected options: DeepRequired<IEditorOption>
 
   constructor(element: IElement, control: Control) {
     const draw = control.getDraw()
@@ -211,7 +211,8 @@ export class TextControl implements IControlInstance {
       return -1
     }
     const elementList = context.elementList || this.control.getElementList()
-    const range = context.range || this.control.getRange()
+    const range =
+      context.range || this.control.getValueRange() || this.control.getRange()
     this.control.shrinkBoundary(context)
     const { startIndex, endIndex } = range
     this.control

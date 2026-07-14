@@ -17,5 +17,6 @@ export enum ElementType {
   BLOCK = 'block',
   TITLE = 'title',
   LIST = 'list',
-  SPLIT_TAG = 'splitTag'
+  SPLIT_TAG = 'splitTag',
+  LABEL = 'label'
 }

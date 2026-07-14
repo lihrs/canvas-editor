@@ -44,10 +44,11 @@ export function del(evt: KeyboardEvent, host: CanvasEvent) {
   if (!rangeManager.getIsCanInput()) return
   const { startIndex, endIndex, isCrossRowCol, splitTdRange } =
     rangeManager.getRange()
+  const isCollapsed = rangeManager.getIsCollapsed()
   // 隐藏控件删除
   const elementList = draw.getElementList()
   const control = draw.getControl()
-  if (rangeManager.getIsCollapsed()) {
+  if (isCollapsed) {
     deleteHideElement(host)
   }
   // 删除操作
@@ -75,7 +76,7 @@ export function del(evt: KeyboardEvent, host: CanvasEvent) {
     if (curIndex) {
       control.emitControlContentChange()
     }
-  } else if (elementList[endIndex + 1]?.controlId) {
+  } else if (isCollapsed && elementList[endIndex + 1]?.controlId) {
     // 光标在控件前
     curIndex = control.removeControl(endIndex + 1)
   } else {

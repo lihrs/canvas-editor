@@ -28,6 +28,8 @@ import {
   IInsertElementListOption
 } from '../../interface/Element'
 import { IRow, IRowElement } from '../../interface/Row'
+import { IColumnLayout, IColumnOption } from '../../interface/Column'
+import { ColumnManager } from './column/ColumnManager'
 import { deepClone, getUUID, nextTick } from '../../utils'
 import { Cursor } from '../cursor/Cursor'
 import { CanvasEvent } from '../event/CanvasEvent'
@@ -52,12 +54,14 @@ import { SelectionObserver } from '../observer/SelectionObserver'
 import { TableParticle } from './particle/table/TableParticle'
 import { TableTool } from './particle/table/TableTool'
 import { HyperlinkParticle } from './particle/HyperlinkParticle'
+import { LabelParticle } from './particle/LabelParticle'
 import { Header } from './frame/Header'
 import { SuperscriptParticle } from './particle/SuperscriptParticle'
 import { SubscriptParticle } from './particle/SubscriptParticle'
 import { SeparatorParticle } from './particle/SeparatorParticle'
 import { PageBreakParticle } from './particle/PageBreakParticle'
 import { Watermark } from './frame/Watermark'
+import { WatermarkLayer } from '../../dataset/enum/Watermark'
 import {
   EditorComponent,
   EditorMode,
@@ -106,6 +110,7 @@ import { Override } from '../override/Override'
 import { FlexDirection, ImageDisplay } from '../../dataset/enum/Common'
 import { PUNCTUATION_REG } from '../../dataset/constant/Regular'
 import { LineBreakParticle } from './particle/LineBreakParticle'
+import { WhiteSpaceParticle } from './particle/WhiteSpaceParticle'
 import { MouseObserver } from '../observer/MouseObserver'
 import { LineNumber } from './frame/LineNumber'
 import { PageBorder } from './frame/PageBorder'
@@ -114,6 +119,9 @@ import { Actuator } from '../actuator/Actuator'
 import { TableOperate } from './particle/table/TableOperate'
 import { Area } from './interactive/Area'
 import { Badge } from './frame/Badge'
+import { Graffiti } from './graffiti/Graffiti'
+import { Magnifier } from './interactive/Magnifier'
+import { Accessibility } from '../accessibility/Accessibility'
 import { ITr } from '../../interface/table/Tr'
 import { IPositionContext } from '../../interface/Position'
 import { IControl } from '../../interface/Control'
@@ -153,6 +161,7 @@ export class Draw {
   private margin: Margin
   private background: Background
   private badge: Badge
+  private magnifier: Magnifier
   private search: Search
   private group: Group
   private area: Area
@@ -174,6 +183,7 @@ export class Draw {
   private header: Header
   private footer: Footer
   private hyperlinkParticle: HyperlinkParticle
+  private labelParticle: LabelParticle
   private dateParticle: DateParticle
   private separatorParticle: SeparatorParticle
   private pageBreakParticle: PageBreakParticle
@@ -184,12 +194,15 @@ export class Draw {
   private blockParticle: BlockParticle
   private listParticle: ListParticle
   private lineBreakParticle: LineBreakParticle
+  private whiteSpaceParticle: WhiteSpaceParticle
   private control: Control
   private pageBorder: PageBorder
   private workerManager: WorkerManager
   private scrollObserver: ScrollObserver
   private selectionObserver: SelectionObserver
   private imageObserver: ImageObserver
+  private graffiti: Graffiti
+  private accessibility: Accessibility
 
   private LETTER_REG: RegExp
   private WORD_LIKE_REG: RegExp
@@ -200,7 +213,9 @@ export class Draw {
   private visiblePageNoList: number[]
   private intersectionPageNo: number
   private lazyRenderIntersectionObserver: IntersectionObserver | null
-  private printModeData: Required<IEditorData> | null
+  private printModeData: Required<Omit<IEditorData, 'graffiti'>> | null
+  private controlMinWidthPlaceholderElementListSet: WeakSet<IElement[]>
+  private columnManager: ColumnManager
   private splitTdValueMap: Map<string, IElement[]> = new Map() // 缓存拆分单元格，用于快速获取
   private tdMap: Map<string, ITd> = new Map()
 
@@ -237,6 +252,7 @@ export class Draw {
     this.margin = new Margin(this)
     this.background = new Background(this)
     this.badge = new Badge(this)
+    this.magnifier = new Magnifier(this)
     this.search = new Search(this)
     this.group = new Group(this)
     this.area = new Area(this)
@@ -257,6 +273,7 @@ export class Draw {
     this.header = new Header(this, data.header)
     this.footer = new Footer(this, data.footer)
     this.hyperlinkParticle = new HyperlinkParticle(this)
+    this.labelParticle = new LabelParticle(this)
     this.dateParticle = new DateParticle(this)
     this.separatorParticle = new SeparatorParticle(this)
     this.pageBreakParticle = new PageBreakParticle(this)
@@ -267,8 +284,11 @@ export class Draw {
     this.blockParticle = new BlockParticle(this)
     this.listParticle = new ListParticle(this)
     this.lineBreakParticle = new LineBreakParticle(this)
+    this.whiteSpaceParticle = new WhiteSpaceParticle(this)
     this.control = new Control(this)
     this.pageBorder = new PageBorder(this)
+    this.graffiti = new Graffiti(this, data.graffiti)
+    this.columnManager = new ColumnManager(this)
 
     this.scrollObserver = new ScrollObserver(this)
     this.selectionObserver = new SelectionObserver(this)
@@ -283,6 +303,7 @@ export class Draw {
 
     this.workerManager = new WorkerManager(this)
     new Actuator(this)
+    this.accessibility = new Accessibility(this)
 
     const { letterClass } = options
     this.LETTER_REG = new RegExp(`[${letterClass.join('')}]`)
@@ -297,6 +318,7 @@ export class Draw {
     this.intersectionPageNo = 0
     this.lazyRenderIntersectionObserver = null
     this.printModeData = null
+    this.controlMinWidthPlaceholderElementListSet = new WeakSet()
 
     // 打印模式优先设置打印数据
     if (this.mode === EditorMode.PRINT) {
@@ -318,7 +340,11 @@ export class Draw {
     }
     // 过滤控件辅助元素
     const clonePrintModeData = deepClone(this.printModeData)
-    const editorDataKeys: (keyof IEditorData)[] = ['header', 'main', 'footer']
+    const editorDataKeys: (keyof Omit<IEditorData, 'graffiti'>)[] = [
+      'header',
+      'main',
+      'footer'
+    ]
     editorDataKeys.forEach(key => {
       clonePrintModeData[key] = this.control.filterAssistElement(
         clonePrintModeData[key]
@@ -372,6 +398,7 @@ export class Draw {
         return false
       case EditorMode.READONLY:
       case EditorMode.PRINT:
+      case EditorMode.GRAFFITI:
         return true
       case EditorMode.FORM:
         return !this.control.getIsRangeWithinControl()
@@ -412,6 +439,18 @@ export class Draw {
     return this.mode === EditorMode.PRINT
   }
 
+  public isAreaHideDisabled() {
+    return (
+      this.isDesignMode() ||
+      (this.isPrintMode() &&
+        this.options.modeRule[EditorMode.PRINT].areaHideDisabled)
+    )
+  }
+
+  public isGraffitiMode() {
+    return this.mode === EditorMode.GRAFFITI
+  }
+
   public getOriginalWidth(): number {
     const { paperDirection, width, height } = this.options
     return paperDirection === PaperDirection.VERTICAL ? width : height
@@ -435,10 +474,10 @@ export class Draw {
     return pageHeight - this.getMainOuterHeight()
   }
 
-  public getMainOuterHeight(): number {
+  public getMainOuterHeight(pageNo?: number): number {
     const margins = this.getMargins()
-    const headerExtraHeight = this.header.getExtraHeight()
-    const footerExtraHeight = this.footer.getExtraHeight()
+    const headerExtraHeight = this.header.getExtraHeight(pageNo)
+    const footerExtraHeight = this.footer.getExtraHeight(pageNo)
     return margins[0] + margins[2] + headerExtraHeight + footerExtraHeight
   }
 
@@ -456,6 +495,15 @@ export class Draw {
     const width = this.getWidth()
     const margins = this.getMargins()
     return width - margins[1] - margins[3]
+  }
+
+  public getColumnLayout(): IColumnLayout | null {
+    return this.columnManager.getLayout()
+  }
+
+  public setColumnConfig(config: IColumnOption | null): void {
+    if (this.options.pageMode === PageMode.CONTINUITY) return
+    this.columnManager.setConfig(config)
   }
 
   public getOriginalInnerWidth(): number {
@@ -633,6 +681,10 @@ export class Draw {
 
   public getBadge(): Badge {
     return this.badge
+  }
+
+  public getMagnifier(): Magnifier {
+    return this.magnifier
   }
 
   public getHistoryManager(): HistoryManager {
@@ -930,6 +982,10 @@ export class Draw {
     return this.tableParticle
   }
 
+  public getBlockParticle(): BlockParticle {
+    return this.blockParticle
+  }
+
   public getHeader(): Header {
     return this.header
   }
@@ -972,6 +1028,14 @@ export class Draw {
 
   public getI18n(): I18n {
     return this.i18n
+  }
+
+  public getGraffiti(): Graffiti {
+    return this.graffiti
+  }
+
+  public getAccessibility(): Accessibility {
+    return this.accessibility
   }
 
   public getRowCount(): number {
@@ -2892,7 +2956,8 @@ export class Draw {
       isDrawLineBreak = !lineBreak.disabled,
       td
     } = payload
-    const isPrintMode = this.mode === EditorMode.PRINT
+    const isPrintMode = this.isPrintMode()
+    const isGraffitiMode = this.isGraffitiMode()
     const { isCrossRowCol, tableId } = this.range.getRange()
     let index = startIndex
     for (let i = 0; i < rowList.length; i++) {
@@ -3228,7 +3293,7 @@ export class Draw {
       // 绘制批注样式
       this.group.render(ctx)
       // 绘制选区
-      if (!isPrintMode) {
+      if (!isPrintMode && !isGraffitiMode) {
         if (rangeRecord.width && rangeRecord.height) {
           const { x, y, width, height } = rangeRecord
           this.range.render(ctx, x, y, width, height)
@@ -3305,19 +3370,31 @@ export class Draw {
       pageBorder
     } = this.options
     const isPrintMode = this.mode === EditorMode.PRINT
+    const isContinuityMode = pageMode === PageMode.CONTINUITY
     const innerWidth = this.getInnerWidth()
     const ctx = this.ctxList[pageNo]
     // 判断当前激活区域-非正文区域时元素透明度降低
     ctx.globalAlpha = !this.zone.isMainActive() ? inactiveAlpha : 1
     this._clearPage(pageNo)
     // 绘制背景
-    this.background.render(ctx, pageNo)
+    if (
+      !isPrintMode ||
+      !this.options.modeRule[EditorMode.PRINT]?.backgroundDisabled
+    ) {
+      this.background.render(ctx, pageNo)
+    }
     // 绘制区域
     if (!isPrintMode) {
       this.area.render(ctx, pageNo)
     }
-    // 绘制水印
-    if (pageMode !== PageMode.CONTINUITY && this.options.watermark.data) {
+    // 绘制分栏分隔线
+    this.columnManager.drawSeparator(ctx, pageNo)
+    // 绘制水印（底层）
+    if (
+      !isContinuityMode &&
+      this.options.watermark.data &&
+      this.options.watermark.layer === WatermarkLayer.BOTTOM
+    ) {
       this.waterMark.render(ctx, pageNo)
     }
     // 绘制页边距
@@ -3381,6 +3458,18 @@ export class Draw {
     }
     // 绘制签章
     this.badge.render(ctx, pageNo)
+    // 绘制涂鸦
+    if (this.isGraffitiMode()) {
+      this.graffiti.render(ctx, pageNo)
+    }
+    // 绘制水印（顶层）
+    if (
+      !isContinuityMode &&
+      this.options.watermark.data &&
+      this.options.watermark.layer === WatermarkLayer.TOP
+    ) {
+      this.waterMark.render(ctx, pageNo)
+    }
   }
 
   private _disconnectLazyRender() {
@@ -3503,6 +3592,10 @@ export class Draw {
         }
         // 控件关键词高亮
         this.control.computeHighlightList()
+      }
+      // 涂鸦信息
+      if (this.isGraffitiMode()) {
+        this.graffiti.compute()
       }
     }
     // 清除光标等副作用

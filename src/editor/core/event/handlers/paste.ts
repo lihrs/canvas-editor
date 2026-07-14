@@ -76,6 +76,12 @@ export function pasteHTML(host: CanvasEvent, htmlText: string) {
 export function pasteImage(host: CanvasEvent, file: File | Blob) {
   const draw = host.getDraw()
   if (draw.isReadonly() || draw.isDisabled()) return
+  // 自定义粘贴图片事件
+  const { pasteImage: overridePasteImage } = draw.getOverride()
+  if (overridePasteImage) {
+    const overrideResult = overridePasteImage(file)
+    if ((<IOverrideResult>overrideResult)?.preventDefault !== false) return
+  }
   const rangeManager = draw.getRange()
   const { startIndex } = rangeManager.getRange()
   const elementList = draw.getElementList()
@@ -179,7 +185,11 @@ export async function pasteByApi(host: CanvasEvent, options?: IPasteOption) {
   // 优先读取编辑器内部粘贴板数据
   const clipboardText = await navigator.clipboard.readText()
   const editorClipboardData = getClipboardData()
-  if (clipboardText === editorClipboardData?.text) {
+  if (
+    editorClipboardData &&
+    normalizeLineBreak(clipboardText) ===
+      normalizeLineBreak(editorClipboardData.text)
+  ) {
     pasteElement(host, editorClipboardData.elementList)
     return
   }

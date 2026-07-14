@@ -122,7 +122,10 @@ export class RangeManager {
       return list.slice(splitTdRange.startIndex + 1, splitTdRange.endIndex + 1)
     }
     const elementList = this.draw.getElementList()
-    return elementList.slice(startIndex + 1, endIndex + 1)
+    return elementList.slice(
+      elementList[startIndex]?.value === ZERO ? startIndex : startIndex + 1,
+      endIndex + 1
+    )
   }
 
   public getSelectionElementList(): IElement[] | null {
@@ -491,6 +494,10 @@ export class RangeManager {
       }
     }
     control.destroyControl()
+    // 抛出选区变化事件
+    if (isChange && this.eventBus.isSubscribe('rangeChange')) {
+      this.eventBus.emit('rangeChange', this.range)
+    }
   }
 
   public replaceRange(range: IRange) {

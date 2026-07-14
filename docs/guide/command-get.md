@@ -77,6 +77,28 @@ const wordCount = await instance.command.getWordCount()
 const range = instance.command.getCursorPosition()
 ```
 
+## getRemainingContentHeight
+
+功能：获取最后一页剩余可用内容高度
+
+用法：
+
+```javascript
+const remainingHeight = instance.command.getRemainingContentHeight()
+```
+
+## computeElementListHeight
+
+功能：计算元素列表占用高度
+
+用法：
+
+```javascript
+const height = instance.command.computeElementListHeight(
+  elementList: IElement[]
+)
+```
+
 ## getRange
 
 功能：获取选区
@@ -156,6 +178,16 @@ const paragraphElementList = instance.command.getRangeParagraph()
 ```javascript
 const [top: number, right: number, bottom: number, left: number] =
   instance.command.getPaperMargin()
+```
+
+## getColumns
+
+功能：获取当前分栏配置。未开启分栏时返回 `null`。
+
+用法：
+
+```javascript
+const columns: IColumnOption | null = instance.command.getColumns()
 ```
 
 ## getSearchNavigateInfo

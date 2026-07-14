@@ -3,7 +3,7 @@ import { defineConfig } from 'vitepress'
 export default defineConfig({
   base: '/canvas-editor-docs/',
   title: 'canvas-editor',
-  description: 'rich text editor by canvas/svg',
+  description: 'A Canvas/SVG-based rich text editor',
   themeConfig: {
     i18nRouting: false,
     algolia: {
@@ -25,6 +25,10 @@ export default defineConfig({
       {
         text: '官方插件',
         link: '/guide/plugin-internal.html'
+      },
+      {
+        text: '调试工具',
+        link: '/guide/devtools.html'
       },
       {
         text: '赞助',
@@ -74,6 +78,10 @@ export default defineConfig({
         items: [{ text: '重写方法', link: '/guide/override' }]
       },
       {
+        text: '宏',
+        items: [{ text: '宏(Macro)', link: '/guide/macro' }]
+      },
+      {
         text: 'API',
         items: [
           { text: '实例API', link: '/guide/api-instance' },
@@ -84,7 +92,8 @@ export default defineConfig({
         text: '插件',
         items: [
           { text: '自定义插件', link: '/guide/plugin-custom' },
-          { text: '官方插件', link: '/guide/plugin-internal' }
+          { text: '官方插件', link: '/guide/plugin-internal' },
+          { text: '开发调试工具', link: '/guide/devtools' }
         ]
       }
     ],
@@ -122,6 +131,10 @@ export default defineConfig({
           {
             text: 'Official plugin',
             link: '/en/guide/plugin-internal.html'
+          },
+          {
+            text: 'DevTools',
+            link: '/en/guide/devtools.html'
           },
           {
             text: 'Donate',
@@ -171,6 +184,10 @@ export default defineConfig({
             items: [{ text: 'override', link: '/en/guide/override' }]
           },
           {
+            text: 'Macro',
+            items: [{ text: 'macro', link: '/en/guide/macro' }]
+          },
+          {
             text: 'Api',
             items: [
               { text: 'instance', link: '/en/guide/api-instance' },
@@ -181,7 +198,8 @@ export default defineConfig({
             text: 'Plugin',
             items: [
               { text: 'custom', link: '/en/guide/plugin-custom' },
-              { text: 'official', link: '/en/guide/plugin-internal' }
+              { text: 'official', link: '/en/guide/plugin-internal' },
+              { text: 'devtools', link: '/en/guide/devtools' }
             ]
           }
         ]

@@ -83,6 +83,11 @@ export function input(data: string, host: CanvasEvent) {
   })
   // 控件-移除placeholder
   const control = draw.getControl()
+  // 光标在控件内但控件未激活（windows输入法弹窗抢光标导致控件被失活）
+  if (control.getIsRangeWithinControl() && !control.getActiveControl()) {
+    control.initControl()
+    if (!control.getActiveControl()) return
+  }
   let curIndex: number
   // 组合输入期间不处理元素内容
   if (!isComposing) {
@@ -115,8 +120,11 @@ export function input(data: string, host: CanvasEvent) {
       curIndex,
       isSubmitHistory: !isComposing
     })
+    if (data) {
+      draw.getAccessibility().input(data)
+    }
   }
-  if (isComposing) {
+  if (isComposing && ~curIndex) {
     host.compositionInfo = {
       value: text,
       startIndex: curIndex,

@@ -78,6 +78,28 @@ Usage:
 const range = instance.command.getCursorPosition()
 ```
 
+## getRemainingContentHeight
+
+Feature: Get remaining available content height on last page
+
+Usage:
+
+```javascript
+const remainingHeight = instance.command.getRemainingContentHeight()
+```
+
+## computeElementListHeight
+
+Feature: Compute element list height
+
+Usage:
+
+```javascript
+const height = instance.command.computeElementListHeight(
+  elementList: IElement[]
+)
+```
+
 ## getRange
 
 Feature: Get range
@@ -157,6 +179,16 @@ Usage:
 ```javascript
 const [top: number, right: number, bottom: number, left: number] =
   instance.command.getPaperMargin()
+```
+
+## getColumns
+
+Feature: Get the current column configuration. Returns `null` when columns are disabled.
+
+Usage:
+
+```javascript
+const columns: IColumnOption | null = instance.command.getColumns()
 ```
 
 ## getSearchNavigateInfo

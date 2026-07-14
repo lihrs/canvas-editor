@@ -159,6 +159,7 @@ export function updown(evt: KeyboardEvent, host: CanvasEvent) {
         })
         anchorStartIndex = preTd.value.length - 1
         anchorEndIndex = anchorStartIndex
+        draw.getTableTool().render()
       }
     } else {
       // 向下移动-最后一行则移出表格外，否则下一行相同列位置
@@ -235,6 +236,7 @@ export function updown(evt: KeyboardEvent, host: CanvasEvent) {
         })
         anchorStartIndex = nextTd.value.length - 1
         anchorEndIndex = anchorStartIndex
+        draw.getTableTool().render()
       }
     }
   } else {
@@ -369,14 +371,14 @@ export function updown(evt: KeyboardEvent, host: CanvasEvent) {
         anchorStartIndex = tdPositionIndex
         anchorEndIndex = anchorStartIndex
         positionList = position.getPositionList()
+        draw.getTableTool().render()
       }
     }
   }
   // 执行跳转
   if (!~anchorStartIndex || !~anchorEndIndex) return
   if (anchorStartIndex > anchorEndIndex) {
-    // prettier-ignore
-    [anchorStartIndex, anchorEndIndex] = [anchorEndIndex, anchorStartIndex]
+    ;[anchorStartIndex, anchorEndIndex] = [anchorEndIndex, anchorStartIndex]
   }
   rangeManager.setRange(anchorStartIndex, anchorEndIndex)
   const isCollapsed = anchorStartIndex === anchorEndIndex
@@ -386,10 +388,12 @@ export function updown(evt: KeyboardEvent, host: CanvasEvent) {
     isSubmitHistory: false,
     isCompute: false
   })
-  // 将光标移动到可视范围内
-  draw.getCursor().moveCursorToVisible({
-    cursorPosition: positionList[isUp ? anchorStartIndex : anchorEndIndex],
-    direction: isUp ? MoveDirection.UP : MoveDirection.DOWN
-  })
+  // 非光标闭合：将光标移动到可视范围内，闭合光标统一处理
+  if (!isCollapsed) {
+    draw.getCursor().moveCursorToVisible({
+      cursorPosition: positionList[isUp ? anchorStartIndex : anchorEndIndex],
+      direction: isUp ? MoveDirection.UP : MoveDirection.DOWN
+    })
+  }
   draw.updateTableTool()
 }

@@ -29,7 +29,8 @@ enum ElementType {
   TITLE = 'title',
   AREA = 'area',
   LIST = 'list',
-  SPLIT_TAG = 'splitTag'
+  SPLIT_TAG = 'splitTag',
+  LABEL = 'label'
 }
 
 enum TitleLevel {
@@ -56,7 +57,8 @@ const TEXTLIKE_ELEMENT_TYPE: ElementType[] = [
   ElementType.SUBSCRIPT,
   ElementType.SUPERSCRIPT,
   ElementType.CONTROL,
-  ElementType.DATE
+  ElementType.DATE,
+  ElementType.LABEL
 ]
 
 const ZERO = '\u200B'

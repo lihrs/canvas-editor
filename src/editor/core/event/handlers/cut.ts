@@ -1,11 +1,11 @@
 import { writeElementList } from '../../../utils/clipboard'
 import { CanvasEvent } from '../CanvasEvent'
 
-export function cut(host: CanvasEvent) {
+export async function cut(host: CanvasEvent) {
   const draw = host.getDraw()
   const rangeManager = draw.getRange()
   const { startIndex, endIndex } = rangeManager.getRange()
-  if (!~startIndex && !~startIndex) return
+  if (!~startIndex && !~endIndex) return
   if (draw.isReadonly() || !rangeManager.getIsCanInput()) return
 
   const elementList = draw.getElementList()
@@ -32,7 +32,7 @@ export function cut(host: CanvasEvent) {
   }
   const options = draw.getOptions()
   // 写入粘贴板
-  writeElementList(elementList.slice(start + 1, end + 1), options)
+  await writeElementList(elementList.slice(start + 1, end + 1), options)
   const control = draw.getControl()
   let curIndex: number
   if (control.getActiveControl() && control.getIsRangeWithinControl()) {

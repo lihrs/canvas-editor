@@ -20,6 +20,16 @@ instance.eventBus.off<K keyof EventMap>(
 )
 ```
 
+## rangeChange
+
+Feature: The selection changes
+
+Usage:
+
+```javascript
+instance.eventBus.on('rangeChange', (payload: IRange) => void)
+```
+
 ## rangeStyleChange
 
 Feature: The selection style changes
@@ -228,6 +238,32 @@ Usage:
 
 ```javascript
 instance.eventBus.on('imageMousedown', (payload: {
+  evt: MouseEvent
+  element: IElement
+}) => void)
+```
+
+## imageDblclick
+
+Feature: The image double click event
+
+Usage:
+
+```javascript
+instance.eventBus.on('imageDblclick', (payload: {
+  evt: MouseEvent
+  element: IElement
+}) => void)
+```
+
+## labelMousedown
+
+Feature: The label mousedown event
+
+Usage:
+
+```javascript
+instance.eventBus.on('labelMousedown', (payload: {
   evt: MouseEvent
   element: IElement
 }) => void)

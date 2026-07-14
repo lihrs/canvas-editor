@@ -9,6 +9,19 @@ const instance = new Editor(container, <IElement[]>data, options)
 instance.command.commandName()
 ```
 
+::: tip
+The execution of certain commands may cause the cursor to move out of the document (e.g., clicking the "Bold" button on the custom toolbar). In such cases, you can assign an identifier (EDITOR_COMPONENT) to the editor, allowing it to recognize the component as internal. For example:
+
+```js
+import { EDITOR_COMPONENT, EditorComponent } from '@hufe921/canvas-editor'
+
+<div class="menu" :[EDITOR_COMPONENT]="EditorComponent.MENU">
+  <button class="bold"></button>
+</div>
+```
+
+:::
+
 ## executeMode
 
 Feature: Switch editor mode (Edit, Clean, Read only)
@@ -125,6 +138,16 @@ Usage:
 
 ```javascript
 instance.command.executeBlur()
+```
+
+## executeHideCursor
+
+Feature: Hide cursor (keep range)
+
+Usage:
+
+```javascript
+instance.command.executeHideCursor()
 ```
 
 ## executeUndo
@@ -595,7 +618,7 @@ Feature: Insert a dividing line
 Usage:
 
 ```javascript
-instance.command.executeSeparator(dashArray: number[])
+instance.command.executeSeparator(dashArray: number[], option?: { lineWidth?: number; color?: string })
 ```
 
 ## executePageBreak
@@ -621,6 +644,7 @@ instance.command.executeAddWatermark({
   opacity?: number;
   size?: number;
   font?: string;
+  layer?: WatermarkLayer;
 })
 ```
 
@@ -641,7 +665,7 @@ Feature: 搜索
 Usage:
 
 ```javascript
-instance.command.executeSearch(keyword: string)
+instance.command.executeSearch(keyword: string, options?: ISearchOption)
 ```
 
 ## executeSearchNavigatePre
@@ -681,7 +705,7 @@ Feature: Print
 Usage:
 
 ```javascript
-instance.command.executePrint()
+instance.command.executePrint(option?: IPrintOption)
 ```
 
 ## executeReplaceImageElement
@@ -712,6 +736,16 @@ Usage:
 
 ```javascript
 instance.command.executeChangeImageDisplay(element: IElement, display: ImageDisplay)
+```
+
+## executeSetImageCrop
+
+Feature: Set image crop information
+
+Usage:
+
+```javascript
+instance.command.executeSetImageCrop(crop: IImageCrop)
 ```
 
 ## executePageMode
@@ -792,6 +826,16 @@ Usage:
 
 ```javascript
 instance.command.executeSetPaperMargin([top: number, right: number, bottom: number, left: number])
+```
+
+## executeSetColumns
+
+Feature: Set the column configuration.
+
+Usage:
+
+```javascript
+instance.command.executeSetColumns(config: IColumnOption | null)
 ```
 
 ## executeSetMainBadge
@@ -1044,6 +1088,16 @@ Usage:
 instance.command.executeInsertControl(payload: IElement)
 ```
 
+## executeJumpControl
+
+Feature: Jump to the next/previous control
+
+Usage:
+
+```javascript
+instance.command.executeJumpControl(payload?: { direction?: MoveDirection })
+```
+
 ## executeUpdateOptions
 
 Feature: Update options
@@ -1104,6 +1158,16 @@ Usage:
 instance.command.executeSetAreaValue(payload: ISetAreaValueOption)
 ```
 
+## executeDeleteArea
+
+Feature: delete area
+
+Usage:
+
+```javascript
+instance.command.executeDeleteArea(payload?: IDeleteAreaOption)
+```
+
 ## executeLocationArea
 
 Feature: positioning area position
@@ -1112,4 +1176,14 @@ Usage:
 
 ```javascript
 instance.command.executeLocationArea(areaId: string, options?: ILocationAreaOption)
+```
+
+## executeClearGraffiti
+
+Feature: clear graffiti data
+
+Usage:
+
+```javascript
+instance.command.executeClearGraffiti()
 ```

@@ -69,6 +69,8 @@ window.onload = function () {
   console.log('实例: ', instance)
   // cypress使用
   Reflect.set(window, 'editor', instance)
+  // canvas-editor-devtools使用
+  Reflect.set(window, '__CANVAS_EDITOR_INSTANCE__', instance)
 
   // 菜单弹窗销毁
   window.addEventListener(
@@ -549,8 +551,6 @@ window.onload = function () {
         const url = payload.find(p => p.name === 'url')?.value
         if (!url) return
         instance.command.executeHyperlink({
-          type: ElementType.HYPERLINK,
-          value: '',
           url,
           valueList: splitText(name).map(n => ({
             value: n,
@@ -671,10 +671,13 @@ window.onload = function () {
         onConfirm: payload => {
           const nullableIndex = payload.findIndex(p => !p.value)
           if (~nullableIndex) return
-          const watermark = payload.reduce((pre, cur) => {
-            pre[cur.name] = cur.value
-            return pre
-          }, <any>{})
+          const watermark = payload.reduce(
+            (pre, cur) => {
+              pre[cur.name] = cur.value
+              return pre
+            },
+            <any>{}
+          )
           const repeat = watermark.repeat === '1'
           instance.command.executeAddWatermark({
             data: watermark.data,
@@ -1235,6 +1238,12 @@ window.onload = function () {
   const replaceInputDom = document.querySelector<HTMLInputElement>(
     '.menu-item__search__collapse__replace input'
   )!
+  const searchRegInputDom =
+    document.querySelector<HTMLInputElement>('#option-reg')!
+  const searchCaseInputDom =
+    document.querySelector<HTMLInputElement>('#option-case')!
+  const searchSelectionInputDom =
+    document.querySelector<HTMLInputElement>('#option-selection')!
   const searchDom =
     document.querySelector<HTMLDivElement>('.menu-item__search')!
   searchDom.title = `搜索与替换(${isApple ? '⌘' : 'Ctrl'}+F)`
@@ -1271,14 +1280,23 @@ window.onload = function () {
       instance.command.executeSearch(null)
       setSearchResult()
     }
-  searchInputDom.oninput = function () {
-    instance.command.executeSearch(searchInputDom.value || null)
+
+  function emitSearch() {
+    instance.command.executeSearch(searchInputDom.value || null, {
+      isRegEnable: searchRegInputDom.checked,
+      isIgnoreCase: searchCaseInputDom.checked,
+      isLimitSelection: searchSelectionInputDom.checked
+    })
     setSearchResult()
   }
+
+  searchInputDom.oninput = emitSearch
+  searchRegInputDom.onchange = emitSearch
+  searchCaseInputDom.onchange = emitSearch
+  searchSelectionInputDom.onchange = emitSearch
   searchInputDom.onkeydown = function (evt) {
     if (evt.key === 'Enter') {
-      instance.command.executeSearch(searchInputDom.value || null)
-      setSearchResult()
+      emitSearch()
     }
   }
   searchCollapseDom.querySelector<HTMLButtonElement>('button')!.onclick =
@@ -1516,6 +1534,67 @@ window.onload = function () {
     })
   }
 
+  // 分栏配置
+  const columnConfigDom =
+    document.querySelector<HTMLDivElement>('.column-config')!
+  columnConfigDom.onclick = function () {
+    const current = instance.command.getColumns()
+    const count = current?.count ?? 1
+    const gap = current?.gap ?? 20
+    const separator = current?.separator ? 'true' : 'false'
+    new Dialog({
+      title: '分栏',
+      data: [
+        {
+          type: 'select',
+          label: '栏数',
+          name: 'count',
+          required: true,
+          value: `${count}`,
+          options: [
+            { value: '1', label: '1（关闭）' },
+            { value: '2', label: '2' },
+            { value: '3', label: '3' },
+            { value: '4', label: '4' },
+            { value: '5', label: '5' }
+          ]
+        },
+        {
+          type: 'text',
+          label: '栏间距',
+          name: 'gap',
+          required: true,
+          value: `${gap}`,
+          placeholder: '请输入栏间距（像素）'
+        },
+        {
+          type: 'select',
+          label: '分隔线',
+          name: 'separator',
+          required: true,
+          value: separator,
+          options: [
+            { value: 'false', label: '不显示' },
+            { value: 'true', label: '显示' }
+          ]
+        }
+      ],
+      onConfirm: payload => {
+        const countValue = payload.find(p => p.name === 'count')?.value
+        if (!countValue) return
+        const gapValue = payload.find(p => p.name === 'gap')?.value
+        if (!gapValue) return
+        const separatorValue = payload.find(p => p.name === 'separator')?.value
+        if (!separatorValue) return
+        instance.command.executeSetColumns({
+          count: Number(countValue),
+          gap: Number(gapValue),
+          separator: separatorValue === 'true'
+        })
+      }
+    })
+  }
+
   // 全屏
   const fullscreenDom = document.querySelector<HTMLDivElement>('.fullscreen')!
   fullscreenDom.onclick = toggleFullscreen
@@ -1563,6 +1642,10 @@ window.onload = function () {
     {
       mode: EditorMode.DESIGN,
       name: '设计模式'
+    },
+    {
+      mode: EditorMode.GRAFFITI,
+      name: '涂鸦模式'
     }
   ]
   const modeElement = document.querySelector<HTMLDivElement>('.editor-mode')!
@@ -1826,9 +1909,8 @@ window.onload = function () {
   }
 
   instance.listener.pageSizeChange = function (payload) {
-    document.querySelector<HTMLSpanElement>(
-      '.page-size'
-    )!.innerText = `${payload}`
+    document.querySelector<HTMLSpanElement>('.page-size')!.innerText =
+      `${payload}`
   }
 
   instance.listener.intersectionPageNoChange = function (payload) {
@@ -1897,6 +1979,12 @@ window.onload = function () {
   }
 
   // 9. 右键菜单注册
+  // 宏：从 localStorage 恢复已保存的宏
+  const MACRO_STORAGE_KEY = 'canvas-editor:macros'
+  const saved = localStorage.getItem(MACRO_STORAGE_KEY)
+  if (saved) {
+    instance.macro.importMacros(saved)
+  }
   instance.register.contextMenuList([
     {
       name: '批注',
@@ -1937,6 +2025,72 @@ window.onload = function () {
       }
     },
     {
+      name: '新增题注',
+      icon: 'caption',
+      when: payload => {
+        return (
+          !payload.isReadonly &&
+          payload.startElement?.type === ElementType.IMAGE &&
+          !payload.startElement?.imgCaption
+        )
+      },
+      callback: (command: Command) => {
+        new Dialog({
+          title: '新增题注',
+          data: [
+            {
+              type: 'text',
+              label: '题注内容',
+              name: 'value',
+              required: true,
+              placeholder: '请输入题注内容，使用{imageNo}表示图片序号'
+            }
+          ],
+          onConfirm: payload => {
+            const value = payload.find(p => p.name === 'value')?.value
+            if (!value) return
+            command.executeSetImageCaption({
+              value
+            })
+          }
+        })
+      }
+    },
+    {
+      name: '修改题注',
+      icon: 'caption',
+      when: payload => {
+        return (
+          !payload.isReadonly &&
+          payload.startElement?.type === ElementType.IMAGE &&
+          !!payload.startElement?.imgCaption
+        )
+      },
+      callback: (command: Command, context) => {
+        const currentCaption = context.startElement?.imgCaption
+        new Dialog({
+          title: '修改题注',
+          data: [
+            {
+              type: 'text',
+              label: '题注内容',
+              name: 'value',
+              required: true,
+              value: currentCaption?.value,
+              placeholder: '请输入题注内容，使用{imageNo}表示图片序号'
+            }
+          ],
+          onConfirm: payload => {
+            const value = payload.find(p => p.name === 'value')?.value
+            command.executeSetImageCaption({
+              ...currentCaption,
+              value: value || ''
+            })
+          }
+        })
+      }
+    },
+    {
       name: '签名',
       icon: 'signature',
       when: payload => {
@@ -1969,6 +2123,123 @@ window.onload = function () {
       callback: (command: Command) => {
         command.executeWordTool()
       }
+    },
+    {
+      name: '清空涂鸦信息',
+      when: payload => {
+        return payload.options.mode === EditorMode.GRAFFITI
+      },
+      callback: (command: Command) => {
+        command.executeClearGraffiti()
+      }
+    },
+    {
+      name: '宏',
+      when: payload => !payload.isReadonly,
+      childMenus: [
+        {
+          name: '录制宏',
+          icon: 'record',
+          when: () => !instance.macro.isRecording(),
+          callback: () => {
+            instance.macro.startRecording()
+          }
+        },
+        {
+          name: '停止录制宏',
+          icon: 'stop',
+          when: () => instance.macro.isRecording(),
+          callback: () => {
+            new Dialog({
+              title: '保存宏',
+              data: [
+                {
+                  type: 'text',
+                  label: '宏名称',
+                  name: 'name',
+                  required: true,
+                  placeholder: '请输入宏名称'
+                }
+              ],
+              onConfirm: payload => {
+                const name = payload.find(p => p.name === 'name')?.value
+                if (!name) return
+                const macro = instance.macro.stopRecording(name)
+                if (!macro) return
+                localStorage.setItem(
+                  MACRO_STORAGE_KEY,
+                  instance.macro.exportMacros()
+                )
+              },
+              onCancel: () => {
+                instance.macro.cancelRecording()
+              }
+            })
+          }
+        },
+        {
+          name: '回放宏',
+          when: () =>
+            !instance.macro.isRecording() &&
+            instance.macro.getMacros().length > 0,
+          callback: () => {
+            const macros = instance.macro.getMacros()
+            new Dialog({
+              title: '回放宏',
+              data: [
+                {
+                  type: 'select',
+                  label: '选择宏',
+                  name: 'macroId',
+                  required: true,
+                  options: macros.map(m => ({
+                    label: `${m.name} (${m.type})`,
+                    value: m.id
+                  }))
+                }
+              ],
+              onConfirm: async payload => {
+                const id = payload.find(p => p.name === 'macroId')?.value
+                if (!id) return
+                await instance.macro.play(id)
+              }
+            })
+          }
+        },
+        {
+          name: '管理宏',
+          when: () =>
+            !instance.macro.isRecording() &&
+            instance.macro.getMacros().length > 0,
+          callback: () => {
+            const macros = instance.macro.getMacros()
+            new Dialog({
+              title: '管理宏',
+              data: [
+                {
+                  type: 'select',
+                  label: '选择要删除的宏',
+                  name: 'macroId',
+                  options: macros.map(m => ({
+                    label: `${m.name} (${m.type})`,
+                    value: m.id
+                  }))
+                }
+              ],
+              onConfirm: payload => {
+                const id = payload.find(p => p.name === 'macroId')?.value
+                if (!id) return
+                if (instance.macro.removeMacro(id)) {
+                  localStorage.setItem(
+                    MACRO_STORAGE_KEY,
+                    instance.macro.exportMacros()
+                  )
+                }
+              }
+            })
+          }
+        }
+      ]
     }
   ])
 

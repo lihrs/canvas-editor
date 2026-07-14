@@ -1,4 +1,5 @@
 import './assets/css/index.css'
+import { version } from '../../package.json'
 import { IEditorData, IEditorOption, IEditorResult } from './interface/Editor'
 import { IElement } from './interface/Element'
 import { Draw } from './core/draw/Draw'
@@ -40,6 +41,7 @@ import { INavigateInfo } from './core/draw/interactive/Search'
 import { Shortcut } from './core/shortcut/Shortcut'
 import { KeyMap } from './dataset/enum/KeyMap'
 import { BlockType } from './dataset/enum/Block'
+import { MacroType } from './dataset/enum/Macro'
 import { IBlock } from './interface/Block'
 import { ILang } from './interface/i18n/I18n'
 import { VerticalAlign } from './dataset/enum/VerticalAlign'
@@ -50,6 +52,7 @@ import { ListStyle, ListType } from './dataset/enum/List'
 import { ICatalog, ICatalogItem } from './interface/Catalog'
 import { Plugin } from './core/plugin/Plugin'
 import { UsePlugin } from './interface/Plugin'
+import { MacroManager } from './core/macro/MacroManager'
 import { EventBus } from './core/event/eventbus/EventBus'
 import { EventBusMap } from './interface/EventBus'
 import { IRangeStyle } from './interface/Listener'
@@ -70,17 +73,20 @@ import { mergeOption } from './utils/option'
 import { LineNumberType } from './dataset/enum/LineNumber'
 import { AreaMode } from './dataset/enum/Area'
 import { IBadge } from './interface/Badge'
-import { WatermarkType } from './dataset/enum/Watermark'
+import { WatermarkType, WatermarkLayer } from './dataset/enum/Watermark'
 import { INTERNAL_SHORTCUT_KEY } from './dataset/constant/Shortcut'
+import { IGraffitiData } from './interface/Graffiti'
 
 export default class Editor {
   public command: Command
+  public version: string
   public listener: Listener
   public eventBus: EventBus<EventBusMap>
   public override: Override
   public register: Register
   public destroy: () => void
   public use: UsePlugin
+  public macro: MacroManager
 
   constructor(
     container: HTMLDivElement,
@@ -94,12 +100,14 @@ export default class Editor {
     let headerElementList: IElement[] = []
     let mainElementList: IElement[] = []
     let footerElementList: IElement[] = []
+    let graffitiData: IGraffitiData[] = []
     if (Array.isArray(data)) {
       mainElementList = data
     } else {
       headerElementList = data.header || []
       mainElementList = data.main
       footerElementList = data.footer || []
+      graffitiData = data.graffiti || []
     }
     const pageComponentData = [
       headerElementList,
@@ -112,6 +120,8 @@ export default class Editor {
         isForceCompensation: true
       })
     })
+    // 版本
+    this.version = version
     // 监听
     this.listener = new Listener()
     // 事件
@@ -125,7 +135,8 @@ export default class Editor {
       {
         header: headerElementList,
         main: mainElementList,
-        footer: footerElementList
+        footer: footerElementList,
+        graffiti: graffitiData
       },
       this.listener,
       this.eventBus,
@@ -133,6 +144,8 @@ export default class Editor {
     )
     // 命令
     this.command = new Command(new CommandAdapt(draw))
+    // 宏
+    this.macro = new MacroManager(this.command)
     // 菜单
     const contextMenu = new ContextMenu(draw, this.command)
     // 快捷键
@@ -148,6 +161,7 @@ export default class Editor {
       draw.destroy()
       shortcut.removeEvent()
       contextMenu.removeEvent()
+      this.eventBus.dangerouslyClearAll()
     }
     // 插件
     const plugin = new Plugin(this)
@@ -188,6 +202,7 @@ export {
   Command,
   KeyMap,
   BlockType,
+  MacroType,
   PaperDirection,
   TableBorder,
   TdBorder,
@@ -208,7 +223,8 @@ export {
   AreaMode,
   ControlState,
   FlexDirection,
-  WatermarkType
+  WatermarkType,
+  WatermarkLayer
 }
 
 // 对外类型

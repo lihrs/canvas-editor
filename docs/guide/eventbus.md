@@ -20,6 +20,16 @@ instance.eventBus.off<K keyof EventMap>(
 )
 ```
 
+## rangeChange
+
+功能：选区发生改变
+
+用法：
+
+```javascript
+instance.eventBus.on('rangeChange', (payload: IRange) => void)
+```
+
 ## rangeStyleChange
 
 功能：选区样式发生改变
@@ -228,6 +238,32 @@ instance.eventBus.on('imageSizeChange', (payload: { element: IElement }) => void
 
 ```javascript
 instance.eventBus.on('imageMousedown', (payload: {
+  evt: MouseEvent
+  element: IElement
+}) => void)
+```
+
+## imageDblclick
+
+功能：图片双击事件
+
+用法：
+
+```javascript
+instance.eventBus.on('imageDblclick', (payload: {
+  evt: MouseEvent
+  element: IElement
+}) => void)
+```
+
+## labelMousedown
+
+功能：标签 mousedown 事件
+
+用法：
+
+```javascript
+instance.eventBus.on('labelMousedown', (payload: {
   evt: MouseEvent
   element: IElement
 }) => void)

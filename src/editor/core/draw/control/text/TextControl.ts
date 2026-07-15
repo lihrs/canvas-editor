@@ -13,7 +13,7 @@ import {
 import { IEditorOption } from '../../../../interface/Editor'
 import { IElement } from '../../../../interface/Element'
 import { omitObject, pickObject } from '../../../../utils'
-import { formatElementContext } from '../../../../utils/element'
+import { formatElementContext, scanToOwner } from '../../../../utils/element'
 import { Control } from '../Control'
 import { ElementType } from '../../../../dataset/enum/Element'
 
@@ -40,35 +40,26 @@ export class TextControl implements IControlInstance {
   public getValue(context: IControlContext = {}): IElement[] {
     const elementList = context.elementList || this.control.getElementList()
     let { startIndex } = context.range || this.control.getRange()
-    const draw = this.control.getDraw()
-    const curTd = context ? null : draw.getTd()
     if (startIndex >= elementList.length) {
       startIndex = elementList.length - 1
     }
     const startElement = elementList[startIndex]
     const data: IElement[] = []
 
-    let findTd = curTd
+    if (startElement.controlComponent === ControlComponent.VALUE) {
+      data.push(startElement)
+    }
     // 向左查找
-    let prevList = elementList
     let preIndex = startIndex
-    while (true) {
-      if (preIndex < 0) {
-        if (findTd?.linkTdPrevId) {
-          // 超出边界 进入nextTd
-          const prevTd = draw.getTdById(findTd.linkTdPrevId)
-          if (prevTd) {
-            prevList = prevTd.value
-            preIndex = prevList.length - 1
-            findTd = prevTd
-            continue
-          }
-        }
-      }
-      if (preIndex < 0) {
-        break
-      }
-      const preElement = prevList[preIndex]
+    while (preIndex > 0) {
+      const next = scanToOwner(
+        elementList,
+        preIndex,
+        -1,
+        startElement.controlId!
+      )
+      if (next < 0) break
+      const preElement = elementList[next]
       if (
         preElement.controlId !== startElement.controlId ||
         preElement.controlComponent === ControlComponent.PREFIX ||
@@ -79,27 +70,20 @@ export class TextControl implements IControlInstance {
       if (preElement.controlComponent === ControlComponent.VALUE) {
         data.unshift(preElement)
       }
-      preIndex--
+      preIndex = next
     }
 
-    findTd = curTd
     // 向右查找
-    let nextList = elementList
     let nextIndex = startIndex + 1
-    while (true) {
-      if (nextIndex >= nextList.length) {
-        if (findTd?.linkTdNextId) {
-          // 超出边界 进入nextTd
-          const nextTd = draw.getTdById(findTd.linkTdNextId)
-          if (nextTd) {
-            nextList = nextTd.value
-            nextIndex = 0
-            findTd = nextTd
-            continue
-          }
-        }
-      }
-      const nextElement = nextList[nextIndex]
+    while (nextIndex < elementList.length) {
+      const next = scanToOwner(
+        elementList,
+        nextIndex,
+        1,
+        startElement.controlId!
+      )
+      if (next < 0 || next >= elementList.length) break
+      const nextElement = elementList[next]
       if (
         !nextElement ||
         nextElement.controlId !== startElement.controlId ||
@@ -111,7 +95,7 @@ export class TextControl implements IControlInstance {
       if (nextElement.controlComponent === ControlComponent.VALUE) {
         data.push(nextElement)
       }
-      nextIndex++
+      nextIndex = next
     }
     return data.filter(item => item.type !== ElementType.SPLIT_TAG)
   }
@@ -155,6 +139,26 @@ export class TextControl implements IControlInstance {
     this.control.shrinkBoundary(context)
     const { startIndex, endIndex } = range
     const draw = this.control.getDraw()
+    const startElement = elementList[startIndex]
+    // 选区跨内层段时，连同内层一起替换。若内层处于 active 先销毁
+    const activeControl = this.control.getActiveControl()
+    const activeElement = activeControl?.getElement()
+    if (
+      activeElement &&
+      activeElement.controlId &&
+      activeElement.controlId !== startElement.controlId
+    ) {
+      let inRange = false
+      for (let i = startIndex; i <= endIndex; i++) {
+        if (elementList[i]?.controlId === activeElement.controlId) {
+          inRange = true
+          break
+        }
+      }
+      if (inRange) {
+        this.control.destroyControl({ isEmitEvent: true })
+      }
+    }
     // 移除选区元素
     if (startIndex !== endIndex) {
       draw.spliceElementList(
@@ -171,7 +175,6 @@ export class TextControl implements IControlInstance {
       this.control.removePlaceholder(startIndex, context)
     }
     // 非文本类元素或前缀过渡掉样式属性
-    const startElement = elementList[startIndex]
     const anchorElement =
       (startElement.type &&
         !TEXTLIKE_ELEMENT_TYPE.includes(startElement.type)) ||

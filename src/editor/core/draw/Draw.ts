@@ -108,7 +108,10 @@ import { EventBusMap } from '../../interface/EventBus'
 import { Group } from './interactive/Group'
 import { Override } from '../override/Override'
 import { FlexDirection, ImageDisplay } from '../../dataset/enum/Common'
-import { PUNCTUATION_REG } from '../../dataset/constant/Regular'
+import {
+  PUNCTUATION_REG,
+  WHITE_SPACE_REG
+} from '../../dataset/constant/Regular'
 import { LineBreakParticle } from './particle/LineBreakParticle'
 import { WhiteSpaceParticle } from './particle/WhiteSpaceParticle'
 import { MouseObserver } from '../observer/MouseObserver'
@@ -699,6 +702,10 @@ export class Draw {
     return this.zone
   }
 
+  public getColumnManager(): ColumnManager {
+    return this.columnManager
+  }
+
   public getRange(): RangeManager {
     return this.range
   }
@@ -1043,7 +1050,7 @@ export class Draw {
   }
 
   public async getDataURL(payload: IGetImageOption = {}): Promise<string[]> {
-    const { pixelRatio, mode } = payload
+    const { pixelRatio, mode, snapDomFunction } = payload
     // 放大像素比
     if (pixelRatio) {
       this.setPagePixelRatio(pixelRatio)
@@ -1061,6 +1068,10 @@ export class Draw {
       isSubmitHistory: false
     })
     await this.imageObserver.allSettled()
+    // 叠加iframe图片
+    if (snapDomFunction) {
+      await this.blockParticle.drawIframeToPage(this.pageList, snapDomFunction)
+    }
     const dataUrlList = this.pageList.map(c => c.toDataURL())
     // 还原
     if (pixelRatio) {
@@ -1268,10 +1279,13 @@ export class Draw {
         row => row.elementList
       )
     }
+    // 同步block的最新数据
+    this.blockParticle.update()
     const data: Required<IEditorData> = {
       header: this.getHeaderElementList(),
       main: mainElementList,
-      footer: this.getFooterElementList()
+      footer: this.getFooterElementList(),
+      graffiti: this.graffiti.getValue()
     }
     return data
   }
@@ -1289,7 +1303,8 @@ export class Draw {
       }),
       footer: zipElementList(originData.footer, {
         extraPickAttrs
-      })
+      }),
+      graffiti: originData.graffiti
     }
     return {
       version,
@@ -1332,7 +1347,7 @@ export class Draw {
     })
   }
 
-  public setEditorData(payload: Partial<IEditorData>) {
+  public setEditorData(payload: Partial<Omit<IEditorData, 'graffiti'>>) {
     const { header, main, footer } = payload
     if (header) {
       this.header.setElementList(header)
@@ -1412,10 +1427,25 @@ export class Draw {
   }
 
   public getElementRowMargin(el: IElement) {
-    const { defaultBasicRowMarginHeight, defaultRowMargin, scale } =
-      this.options
+    const {
+      defaultSize,
+      defaultBasicRowMarginHeight,
+      defaultRowMargin,
+      scale
+    } = this.options
+    // 字体在12-30之间，行间距不变，小于12按比例缩小，大于30按比例放大
+    const fontSize = el.size || defaultSize
+    let ratio = 1
+    if (fontSize < 12) {
+      ratio = fontSize / 12
+    } else if (fontSize > 30) {
+      ratio = 1 + (fontSize - 30) / 30
+    }
     return (
-      defaultBasicRowMarginHeight * (el.rowMargin ?? defaultRowMargin) * scale
+      defaultBasicRowMarginHeight *
+      ratio *
+      (el.rowMargin ?? defaultRowMargin) *
+      scale
     )
   }
 
@@ -1433,17 +1463,29 @@ export class Draw {
     } = payload
     const {
       defaultSize,
-      defaultRowMargin,
       scale,
+      imgCaption,
       table: { tdPadding, defaultTrMinHeight },
       defaultTabWidth
     } = this.options
     const defaultBasicRowMarginHeight = this.getDefaultBasicRowMarginHeight()
     const canvas = document.createElement('canvas')
     const ctx = canvas.getContext('2d') as CanvasRenderingContext2D
+    // 还原最小宽度控件占位
+    if (this.controlMinWidthPlaceholderElementListSet.has(elementList)) {
+      for (let i = elementList.length - 1; i >= 0; i--) {
+        if (elementList[i].isControlMinWidthPlaceholder) {
+          elementList.splice(i, 1)
+        }
+      }
+      this.controlMinWidthPlaceholderElementListSet.delete(elementList)
+    }
     // 计算列表偏移宽度
     const listStyleMap = this.listParticle.computeListStyle(ctx, elementList)
     const rowList: IRow[] = []
+    const layout =
+      isPagingMode && !isFromTable ? this.columnManager.getLayout() : null
+    const isColumnEnabled = !!layout && layout.count > 1
     if (elementList.length) {
       rowList.push({
         width: 0,
@@ -1452,13 +1494,20 @@ export class Draw {
         elementList: [],
         startIndex: 0,
         rowIndex: 0,
-        rowFlex: elementList?.[0]?.rowFlex || elementList?.[1]?.rowFlex
+        rowFlex: elementList?.[0]?.rowFlex || elementList?.[1]?.rowFlex,
+        ...(isColumnEnabled ? { columnIndex: 0 } : {})
       })
     }
     // 起始位置及页码计算
     let x = startX
     let y = startY
     let pageNo = 0
+    // 分页模式下按页计算起始 Y（页眉/页脚禁用时该页起始位置上移）
+    let pageStartY = startY
+    if (isPagingMode && !isFromTable) {
+      pageStartY = this.getMargins()[0] + this.getHeader().getExtraHeight(0)
+      y = pageStartY
+    }
     // 列表位置
     let listId: string | undefined
     let listIndex = 0
@@ -1468,8 +1517,7 @@ export class Draw {
       const curRow: IRow = rowList[rowList.length - 1]
       const element = elementList[i]
       this.clearElementEffect(element)
-      const rowMargin =
-        defaultBasicRowMarginHeight * (element.rowMargin ?? defaultRowMargin)
+      const rowMargin = this.getElementRowMargin(element)
       const metrics: IElementMetrics = {
         width: 0,
         height: 0,
@@ -1481,13 +1529,16 @@ export class Draw {
         curRow.offsetX ||
         (element.listId && listStyleMap.get(element.listId)) ||
         0
-      const availableWidth = innerWidth - offsetX
+      const rowMaxWidth = isColumnEnabled && layout ? layout.width : innerWidth
+      const availableWidth = rowMaxWidth - offsetX
       // 增加起始位置坐标偏移量
       const isStartElement = curRow.elementList.length === 1
       x += isStartElement ? offsetX : 0
       y += isStartElement ? curRow.offsetY || 0 : 0
       if (
-        (element.hide || element.control?.hide || element.area?.hide) &&
+        (element.hide ||
+          element.control?.hide ||
+          (element.area?.hide && !this.isAreaHideDisabled())) &&
         !this.isDesignMode()
       ) {
         const preElement = curRow.elementList[curRow.elementList.length - 1]
@@ -1525,8 +1576,14 @@ export class Draw {
             metrics.height = elementHeight
             metrics.boundingBoxDescent = elementHeight
           }
+          // 增加题注高度
+          if (element.imgCaption?.value) {
+            const fontSize = element.imgCaption.size || imgCaption.size
+            const captionTop = element.imgCaption.top ?? imgCaption.top
+            const captionHeight = (fontSize + captionTop) * scale
+            metrics.boundingBoxAscent += captionHeight
+          }
         }
-        metrics.boundingBoxAscent = 0
       } else if (element.type === ElementType.TABLE) {
         // 表格分页处理进度：https://github.com/Hufe921/canvas-editor/issues/41
         // 查看后续表格是否属于同一个源表格-存在即合并
@@ -1669,7 +1726,8 @@ export class Draw {
         // 表格分页处理(拆分表格)
         if (isPagingMode) {
           const height = this.getHeight()
-          const marginHeight = this.getMainOuterHeight()
+          // 按表格所在页计算外部占位高度（页眉/页脚禁用时该页可用空间更大）
+          const marginHeight = this.getMainOuterHeight(pageNo)
           let curPagePreHeight = marginHeight
 
           // DEBUG: 打印基本信息
@@ -1705,7 +1763,8 @@ export class Draw {
           }
 
           // 当前剩余高度是否能容下当前表格第一行（可拆分）的高度，排除掉表头类型
-          const rowMarginHeight = rowMargin * 2
+          // 前面元素为换页符时重新计算高度
+          const rowMarginHeight = rowMargin * 2 * scale
           const firstTrHeight = element.trList![0].height! * scale
           console.log('  判断是否需要换新页:', {
             curPagePreHeight,
@@ -1717,7 +1776,8 @@ export class Draw {
           })
           if (
             curPagePreHeight + firstTrHeight + rowMarginHeight > height ||
-            (element.pagingIndex !== 0 && element.trList![0].pagingRepeat)
+            (element.pagingIndex !== 0 && element.trList![0].pagingRepeat) ||
+            elementList[i - 1]?.type === ElementType.PAGE_BREAK
           ) {
             // 无可拆分行则切换至新页
             console.log('  -> 切换到新页')
@@ -2499,8 +2559,9 @@ export class Draw {
         this.initTableElementIndex(element, i)
       } else if (element.type === ElementType.SEPARATOR) {
         const {
-          separator: { lineWidth }
+          separator: { lineWidth: defaultLineWidth }
         } = this.options
+        const lineWidth = element.lineWidth || defaultLineWidth
         element.width = availableWidth / scale
         metrics.width = availableWidth
         metrics.height = lineWidth * scale
@@ -2532,7 +2593,19 @@ export class Draw {
         metrics.width = defaultTabWidth * scale
         metrics.height = defaultSize * scale
         metrics.boundingBoxDescent = 0
-        metrics.boundingBoxAscent = metrics.height
+        metrics.boundingBoxAscent =
+          this.textParticle.getBasisWordBoundingBoxAscent(ctx, ctx.font)
+      } else if (element.isControlMinWidthPlaceholder) {
+        metrics.width = (element.width || 0) * scale
+        metrics.height = defaultSize * scale
+        ctx.font = this.getElementFont(element)
+        const basisMetrics = this.textParticle.measureBasisWord(
+          ctx,
+          element.font!
+        )
+        metrics.boundingBoxAscent = basisMetrics.actualBoundingBoxAscent * scale
+        metrics.boundingBoxDescent =
+          basisMetrics.actualBoundingBoxDescent * scale
       } else if (element.type === ElementType.BLOCK) {
         if (!element.width) {
           metrics.width = availableWidth
@@ -2543,6 +2616,19 @@ export class Draw {
         metrics.height = element.height! * scale
         metrics.boundingBoxDescent = metrics.height
         metrics.boundingBoxAscent = 0
+      } else if (element.type === ElementType.LABEL) {
+        const {
+          defaultSize,
+          label: { defaultPadding }
+        } = this.options
+        ctx.font = this.getElementFont(element)
+        const fontMetrics = this.textParticle.measureText(ctx, element)
+        metrics.width =
+          (fontMetrics.width + defaultPadding[1] + defaultPadding[3]) * scale
+        metrics.height = (element.size || defaultSize) * scale
+        metrics.boundingBoxDescent = 0
+        metrics.boundingBoxAscent =
+          (defaultPadding[0] + fontMetrics.actualBoundingBoxAscent) * scale
       } else {
         // 设置上下标真实字体尺寸
         const size = element.size || defaultSize
@@ -2559,12 +2645,14 @@ export class Draw {
         if (element.letterSpacing) {
           metrics.width += element.letterSpacing * scale
         }
-        metrics.boundingBoxAscent =
-          (element.value === ZERO
-            ? element.size || defaultSize
-            : fontMetrics.actualBoundingBoxAscent) * scale
+        // 使用基于字体的基准度量以确保一致的行高，避免字符特定度量导致的布局跳动
+        const basisMetrics = this.textParticle.measureBasisWord(
+          ctx,
+          element.font!
+        )
+        metrics.boundingBoxAscent = basisMetrics.actualBoundingBoxAscent * scale
         metrics.boundingBoxDescent =
-          fontMetrics.actualBoundingBoxDescent * scale
+          basisMetrics.actualBoundingBoxDescent * scale
         if (element.type === ElementType.SUPERSCRIPT) {
           metrics.boundingBoxAscent += metrics.height / 2
         } else if (element.type === ElementType.SUBSCRIPT) {
@@ -2588,12 +2676,21 @@ export class Draw {
         left: 0,
         style: this.getElementFont(element, scale)
       })
-      // 暂时只考虑非换行场景：控件开始时统计宽度，结束时消费宽度及还原
-      if (rowElement.control?.minWidth) {
+      // 控件开始时统计宽度，结束时消费最小宽度并补充跨行占位
+      if (
+        rowElement.control?.minWidth &&
+        !rowElement.isControlMinWidthPlaceholder
+      ) {
         if (rowElement.controlComponent) {
           controlRealWidth += metrics.width
         }
         if (rowElement.controlComponent === ControlComponent.POSTFIX) {
+          const controlMinWidth = rowElement.control.minWidth * scale
+          const extraWidth = controlMinWidth - controlRealWidth
+          const rowRemainingWidth = Math.max(
+            availableWidth - curRow.width - rowElement.metrics.width,
+            0
+          )
           // 设置最小宽度控件属性（字符偏移量）
           this.control.setMinWidthControlInfo({
             row: curRow,
@@ -2601,6 +2698,23 @@ export class Draw {
             availableWidth,
             controlRealWidth
           })
+          let placeholderWidth = extraWidth - rowRemainingWidth
+          const placeholderList: IElement[] = []
+          while (placeholderWidth > 0) {
+            const width = Math.min(placeholderWidth, availableWidth)
+            placeholderList.push({
+              ...rowElement,
+              value: '',
+              width: width / scale,
+              left: 0,
+              isControlMinWidthPlaceholder: true
+            } as IElement)
+            placeholderWidth -= width
+          }
+          if (placeholderList.length) {
+            elementList.splice(i + 1, 0, ...placeholderList)
+            this.controlMinWidthPlaceholderElementListSet.add(elementList)
+          }
           controlRealWidth = 0
         }
       }
@@ -2622,9 +2736,9 @@ export class Draw {
               elementList,
               i
             )
-            // 单词宽度大于行可用宽度，无需折行
+            // 后面存在元素 && 单词宽度大于行可用宽度，无需折行
             const wordWidth = width * scale
-            if (wordWidth <= availableWidth) {
+            if (endElement && wordWidth <= availableWidth) {
               curRowWidth += wordWidth
               nextElement = endElement
             }
@@ -2673,12 +2787,15 @@ export class Draw {
         preElement?.imgDisplay === ImageDisplay.INLINE ||
         element.imgDisplay === ImageDisplay.INLINE ||
         preElement?.listId !== element.listId ||
-        (preElement?.areaId !== element.areaId && !element.area?.hide) ||
+        (preElement?.areaId !== element.areaId &&
+          !(element.area?.hide && !this.isAreaHideDisabled())) ||
         (element.control?.flexDirection === FlexDirection.COLUMN &&
           (element.controlComponent === ControlComponent.CHECKBOX ||
             element.controlComponent === ControlComponent.RADIO) &&
           preElement?.controlComponent === ControlComponent.VALUE) ||
-        (i !== 0 && element.value === ZERO && !element.area?.hide)
+        (i !== 0 &&
+          element.value === ZERO &&
+          !(element.area?.hide && !this.isAreaHideDisabled()))
       // 是否宽度不足导致换行
       const isWidthNotEnough = curRowWidth > availableWidth
       const isWrap = isForceBreak || isWidthNotEnough
@@ -2944,7 +3061,8 @@ export class Draw {
       scale,
       table: { tdPadding },
       group,
-      lineBreak
+      lineBreak,
+      whiteSpace
     } = this.options
     const {
       rowList,
@@ -2953,8 +3071,9 @@ export class Draw {
       positionList,
       startIndex,
       zone,
+      td,
       isDrawLineBreak = !lineBreak.disabled,
-      td
+      isDrawWhiteSpace = !whiteSpace.disabled
     } = payload
     const isPrintMode = this.isPrintMode()
     const isGraffitiMode = this.isGraffitiMode()
@@ -2989,7 +3108,9 @@ export class Draw {
         const preElement = curRow.elementList[j - 1]
         // 元素绘制
         if (
-          (element.hide || element.control?.hide || element.area?.hide) &&
+          (element.hide ||
+            element.control?.hide ||
+            (element.area?.hide && !this.isAreaHideDisabled())) &&
           !this.isDesignMode()
         ) {
           // 控件隐藏时不绘制
@@ -3017,6 +3138,9 @@ export class Draw {
         } else if (element.type === ElementType.HYPERLINK) {
           this.textParticle.complete()
           this.hyperlinkParticle.render(ctx, element, x, y + offsetY)
+        } else if (element.type === ElementType.LABEL) {
+          this.textParticle.complete()
+          this.labelParticle.render(ctx, element, x, y + offsetY)
         } else if (element.type === ElementType.DATE) {
           const nextElement = curRow.elementList[j + 1]
           // 释放之前的
@@ -3076,7 +3200,7 @@ export class Draw {
           this.textParticle.complete()
         } else if (element.type === ElementType.BLOCK) {
           this.textParticle.complete()
-          this.blockParticle.render(pageNo, element, x, y + offsetY)
+          this.blockParticle.render(ctx, pageNo, element, x, y + offsetY)
         } else {
           // 如果当前元素设置左偏移，则上一元素立即绘制
           if (element.left) {
@@ -3101,6 +3225,10 @@ export class Draw {
           j === curRow.elementList.length - 1
         ) {
           this.lineBreakParticle.render(ctx, element, x, y + curRow.height / 2)
+        }
+        // 空白符绘制
+        if (isDrawWhiteSpace && WHITE_SPACE_REG.test(element.value)) {
+          this.whiteSpaceParticle.render(ctx, element, x, y + curRow.height / 2)
         }
         // 边框绘制（目前仅支持控件）
         if (element.control?.border) {
@@ -3164,11 +3292,11 @@ export class Draw {
             if (
               preElement &&
               ((preElement.type === ElementType.SUBSCRIPT &&
-                element.type !== ElementType.SUBSCRIPT) ||
+                  element.type !== ElementType.SUBSCRIPT) ||
                 (preElement.type === ElementType.SUPERSCRIPT &&
                   element.type !== ElementType.SUPERSCRIPT) ||
                 this.getElementSize(preElement) !==
-                  this.getElementSize(element))
+                this.getElementSize(element))
             ) {
               this.strikeout.render(ctx)
             }
@@ -3321,7 +3449,6 @@ export class Draw {
     ctx: CanvasRenderingContext2D,
     payload: IDrawFloatPayload
   ) {
-    const { scale } = this.options
     const floatPositionList = this.position.getFloatPositionList()
     const { imgDisplays, pageNo } = payload
     for (let e = 0; e < floatPositionList.length; e++) {
@@ -3335,13 +3462,8 @@ export class Draw {
         imgDisplays.includes(element.imgDisplay) &&
         element.type === ElementType.IMAGE
       ) {
-        const imgFloatPosition = element.imgFloatPosition!
-        this.imageParticle.render(
-          ctx,
-          element,
-          imgFloatPosition.x * scale,
-          imgFloatPosition.y * scale
-        )
+        const { x, y } = this.position.getFloatPositionCoordinate(floatPosition)
+        this.imageParticle.render(ctx, element, x, y)
       }
     }
   }
@@ -3551,6 +3673,8 @@ export class Draw {
       // 清空浮动元素位置信息
       this.position.setFloatPositionList([])
       if (isPagingMode) {
+        // 分栏信息
+        this.columnManager.compute()
         // 页眉信息
         if (!header.disabled) {
           this.header.compute()
@@ -3564,7 +3688,6 @@ export class Draw {
       const margins = this.getMargins()
       const pageHeight = this.getHeight()
       const extraHeight = this.header.getExtraHeight()
-      const mainOuterHeight = this.getMainOuterHeight()
       const startX = margins[3]
       const startY = margins[0] + extraHeight
       const surroundElementList = pickSurroundElementList(this.elementList)
@@ -3572,7 +3695,6 @@ export class Draw {
         startX,
         startY,
         pageHeight,
-        mainOuterHeight,
         isPagingMode,
         innerWidth,
         surroundElementList,
@@ -3584,7 +3706,7 @@ export class Draw {
       this.position.computePositionList()
       // 区域信息
       this.area.compute()
-      if (this.mode !== EditorMode.PRINT) {
+      if (!this.isPrintMode()) {
         // 搜索信息
         const searchKeyword = this.search.getSearchKeyword()
         if (searchKeyword) {
@@ -3789,6 +3911,10 @@ export class Draw {
     this.globalEvent.removeEvent()
     this.scrollObserver.removeEvent()
     this.selectionObserver.removeEvent()
+    this.workerManager.destroy()
+    this.magnifier.destroy()
+    this.accessibility.destroy()
+    this.lazyRenderIntersectionObserver?.disconnect()
   }
 
   public clearSideEffect() {

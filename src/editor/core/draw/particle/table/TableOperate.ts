@@ -707,16 +707,17 @@ export class TableOperate {
       endTrIndex
     } = this.range.getRange()
     if (!isCrossRowCol) return
-    const { index } = positionContext
     const originalElementList = this.draw.getOriginalElementList()
-    const element = originalElementList[index!]
+    const element = this.position.getTableElementByContext(
+      originalElementList,
+      positionContext
+    )!
     const curTrList = element.trList!
     let startTd = curTrList[startTrIndex!].tdList[startTdIndex!]
     let endTd = curTrList[endTrIndex!].tdList[endTdIndex!]
     // 交换起始位置
     if (startTd.x! > endTd.x! || startTd.y! > endTd.y!) {
-      // prettier-ignore
-      [startTd, endTd] = [endTd, startTd]
+      ;[startTd, endTd] = [endTd, startTd]
     }
     const startColIndex = startTd.colIndex!
     const endColIndex = endTd.colIndex! + (endTd.colspan - 1)
@@ -867,7 +868,7 @@ export class TableOperate {
   public cancelMergeTableCell() {
     const positionContext = this.position.getPositionContext()
     if (!positionContext.isTable) return
-    const { index, tdIndex, trIndex } = positionContext
+    const { tdIndex, trIndex } = positionContext
     const originalElementList = this.draw.getOriginalElementList()
     let element = originalElementList[index!]
     let curTrList = element.trList!
@@ -1228,6 +1229,7 @@ export class TableOperate {
       endTrIndex
     })
     this.draw.render({
+      isSetCursor: false,
       isCompute: false,
       isSubmitHistory: false
     })

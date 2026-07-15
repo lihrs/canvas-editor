@@ -56,9 +56,9 @@ export class TableParticle {
   }
 
   public getRangeRowCol(): ITd[][] | null {
-    const { isTable, index, trIndex, tdIndex } = this.draw
-      .getPosition()
-      .getPositionContext()
+    const position = this.draw.getPosition()
+    const positionContext = position.getPositionContext()
+    const { isTable, trIndex, tdIndex } = positionContext
     if (!isTable) return null
     const {
       isCrossRowCol,
@@ -68,7 +68,11 @@ export class TableParticle {
       endTrIndex
     } = this.range.getRange()
     const originalElementList = this.draw.getOriginalElementList()
-    const element = originalElementList[index!]
+    const element = position.getTableElementByContext(
+      originalElementList,
+      positionContext
+    )
+    if (!element) return null
     const curTrList = element.trList!
     // 非跨列直接返回光标所在单元格
     if (!isCrossRowCol) {
@@ -79,8 +83,7 @@ export class TableParticle {
     if (!startTd || !endTd) return null
     // 交换起始位置
     if (startTd.x! > endTd.x! || startTd.y! > endTd.y!) {
-      // prettier-ignore
-      [startTd, endTd] = [endTd, startTd]
+      ;[startTd, endTd] = [endTd, startTd]
     }
     const startColIndex = startTd.colIndex!
     const endColIndex = endTd.colIndex! + (endTd.colspan - 1)
@@ -575,20 +578,19 @@ export class TableParticle {
     if (!trList || type !== ElementType.TABLE) return
     const {
       isCrossRowCol,
+      tableId,
       startTdIndex,
       endTdIndex,
       startTrIndex,
       endTrIndex
     } = this.range.getRange()
     // 存在跨行/列
-    if (!isCrossRowCol) return
-    let startTd = trList[startTrIndex!]?.tdList[startTdIndex!]
-    let endTd = trList[endTrIndex!]?.tdList[endTdIndex!]
-    if (!startTd || !endTd) return
+    if (!isCrossRowCol || tableId !== element.id) return
+    let startTd = trList[startTrIndex!].tdList[startTdIndex!]
+    let endTd = trList[endTrIndex!].tdList[endTdIndex!]
     // 交换起始位置
     if (startTd.x! > endTd.x! || startTd.y! > endTd.y!) {
-      // prettier-ignore
-      [startTd, endTd] = [endTd, startTd]
+      ;[startTd, endTd] = [endTd, startTd]
     }
     const startColIndex = startTd.colIndex!
     const endColIndex = endTd.colIndex! + (endTd.colspan - 1)

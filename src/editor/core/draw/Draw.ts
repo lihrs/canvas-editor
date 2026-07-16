@@ -1619,15 +1619,6 @@ export class Draw {
                             // 光标在被合并的单元格中，需要更新 range 索引
                             const offset = originalTd.value.length
                             const { startIndex, endIndex } = this.range.getRange()
-                            console.log('=== 表格合并时更新光标 ===', {
-                              positionContextTdId: positionContext.tdId,
-                              tdId: td.id,
-                              positionContextIndex: positionContext.index,
-                              tableIndex,
-                              offset,
-                              oldStartIndex: startIndex,
-                              newStartIndex: startIndex + offset
-                            })
                             this.range.setRange(startIndex + offset, endIndex + offset)
                             // 更新 positionContext 指向合并后的单元格
                             positionContext.index = i
@@ -1659,14 +1650,6 @@ export class Draw {
                           if (td.originalRowspan !== undefined) {
                             originalTd.originalRowspan = td.originalRowspan
                           }
-                          console.log('  合并单元格恢复 rowspan:', {
-                            tdId: td.id,
-                            originalTdId: originalTd.id,
-                            tdOriginalRowspan: td.originalRowspan,
-                            originalTdRowspan: originalTd.rowspan,
-                            originalTdOriginalRowspan: originalTd.originalRowspan,
-                            newRowspan: originalTd.originalRowspan ?? originalTd.rowspan
-                          })
                           originalTd.rowspan =
                             originalTd.originalRowspan ?? originalTd.rowspan
                           break
@@ -1730,17 +1713,6 @@ export class Draw {
           const marginHeight = this.getMainOuterHeight(pageNo)
           let curPagePreHeight = marginHeight
 
-          // DEBUG: 打印基本信息
-          console.log('=== curPagePreHeight 计算 ===', {
-            currentIndex: i,
-            pagingId: element.pagingId || 'none',
-            pagingIndex: element.pagingIndex,
-            tableHeight: element.height ? element.height * scale : 'N/A',
-            rowListLength: rowList.length,
-            pageHeight: height,
-            marginHeight
-          })
-
           // 如果是拆分出来的表格（pagingIndex > 0），应该在新的一页
           // 所以 curPagePreHeight 应该从 marginHeight 开始，不需要累加前面的内容
           if (element.pagingId && element.pagingIndex && element.pagingIndex > 0) {
@@ -1759,38 +1731,24 @@ export class Draw {
                 curPagePreHeight += row.height + rowOffsetY
               }
             }
-            console.log('  rowList 遍历后 curPagePreHeight:', curPagePreHeight)
           }
 
           // 当前剩余高度是否能容下当前表格第一行（可拆分）的高度，排除掉表头类型
           // 前面元素为换页符时重新计算高度
           const rowMarginHeight = rowMargin * 2 * scale
           const firstTrHeight = element.trList![0].height! * scale
-          console.log('  判断是否需要换新页:', {
-            curPagePreHeight,
-            firstTrHeight,
-            rowMarginHeight,
-            totalHeight: curPagePreHeight + firstTrHeight + rowMarginHeight,
-            pageHeight: height,
-            needNewPage: curPagePreHeight + firstTrHeight + rowMarginHeight > height
-          })
+
           if (
             curPagePreHeight + firstTrHeight + rowMarginHeight > height ||
             (element.pagingIndex !== 0 && element.trList![0].pagingRepeat) ||
             elementList[i - 1]?.type === ElementType.PAGE_BREAK
           ) {
             // 无可拆分行则切换至新页
-            console.log('  -> 切换到新页')
             curPagePreHeight = marginHeight
           }
           // 表格高度超过页面高度开始截断行
           // 可用高度
           let usableHeight = height - (curPagePreHeight + rowMarginHeight)
-          console.log('  拆分判断:', {
-            elementHeight,
-            usableHeight,
-            needSplit: elementHeight > usableHeight
-          })
           if (elementHeight > usableHeight) {
             const trList = element.trList!
             // 计算需要移除的行数
@@ -1829,7 +1787,13 @@ export class Draw {
                       // 原始td 跨行单元格向上查找
                       const originTd =
                         findTd ??
-                        this.tableParticle.findPreRowSpanTd(trList, r, cIdx)!
+                        this.tableParticle.findPreRowSpanTd(trList, r, cIdx)
+
+                      if (!originTd) {
+                        console.error(`[创建 cloneTr] 错误：列 ${cIdx} 没有找到对应的单元格！`)
+                        return undefined
+                      }
+
                       // 设置lastColspan以跳过跨列的后续列
                       if (findTd) {
                         lastColspan = findTd.colspan
@@ -1924,23 +1888,8 @@ export class Draw {
                 const cloneTrHasContent = cloneTr.tdList.some(
                   td => td.rowList && td.rowList.length > 0
                 )
-                console.log('  判断行是否有内容:', {
-                  originTrHasContent,
-                  cloneTrHasContent,
-                  originTrTds: originTr.tdList.map(td => ({
-                    colIndex: td.colIndex,
-                    rowspan: td.rowspan,
-                    rowListLength: td.rowList && td.rowList.length || 0
-                  }))
-                })
-                const minHeightOverflow = originTr.minHeight! > usableHeight
 
-                console.log('  拆分决策:', {
-                  originTrHasContent,
-                  cloneTrHasContent,
-                  minHeightOverflow,
-                  willInsertCloneTr: (originTrHasContent || (!cloneTrHasContent && minHeightOverflow)) && (cloneTrHasContent || minHeightOverflow)
-                })
+                const minHeightOverflow = originTr.minHeight! > usableHeight
 
                 if (cloneTrHasContent || minHeightOverflow) {
                   if (
@@ -1972,7 +1921,6 @@ export class Draw {
                       }
                     })
                     // 新的表格行插入到指定位置
-                    console.log(`  插入 cloneTr 到第一页表格的索引 ${deleteStart + 1}`)
                     trList.splice(deleteStart + 1, 0, cloneTr)
                     deleteStart += 1
                     deleteCount = trList.length - deleteStart
@@ -1980,16 +1928,13 @@ export class Draw {
                   }
 
                   // 处理跨行单元格
-                  originTdList.forEach(td => {
+                  originTdList.forEach((td) => {
                     if (td.rowspan > 1) {
-                      // DEBUG: 跨行单元格初始状态
-                      console.log('  发现跨行单元格:', {
-                        colIndex: td.colIndex,
-                        rowspan: td.rowspan,
-                        originalRowspan: td.originalRowspan,
-                        trIndex: td.trIndex,
-                        currentRowIndex: r
-                      })
+                      // 检查是否真的覆盖当前行
+                      if (td.trIndex! + td.rowspan <= r) {
+                        // 跳过这个单元格
+                        return
+                      }
 
                       // 保存原始的 rowspan（如果还没有保存）
                       if (td.originalRowspan === undefined) {
@@ -2031,23 +1976,9 @@ export class Draw {
                         rowsInNextPage = td.originalRowspan - rowsInCurrentPage
                       }
 
-                      // DEBUG: 跨行单元格处理
-                      console.log('  跨行单元格处理:', {
-                        colIndex: td.colIndex,
-                        originalRowspan: td.originalRowspan,
-                        trIndex: td.trIndex,
-                        currentRowIndex: r,
-                        rowsInCurrentPage,
-                        rowsInNextPage,
-                        originTrHasContent
-                      })
-
                       // 只有当 rowsInCurrentPage > 0 时才设置当前页的 rowspan
                       if (rowsInCurrentPage > 0) {
                         td.rowspan = rowsInCurrentPage
-                        console.log(`    设置当前页 rowspan: ${rowsInCurrentPage}`)
-                      } else {
-                        console.log(`    当前页不显示跨行单元格（rowsInCurrentPage = 0）`)
                       }
 
                       const cloneTd = cloneTr.tdList.find(
@@ -2057,7 +1988,6 @@ export class Draw {
                       if (originTrHasContent) {
                         // 原始行有内容，cloneTr 已经插入到第一页
                         // 设置 cloneTd.rowspan 为剩余行数
-                        console.log(`    设置拆分行 rowspan: ${rowsInNextPage}`)
                         cloneTd.rowspan = rowsInNextPage
                       } else {
                         // 原始行没有内容，cloneTr 会被移到下一页
@@ -2066,19 +1996,12 @@ export class Draw {
                           // 拆分点在跨行单元格的起始行
                           // 在这种情况下，不应该将跨行单元格添加到第一页
                           // 应该让整个跨行单元格保持在第二页
-                          console.log(`    跨行单元格在起始行被拆分，保持完整在第二页，rowspan: ${rowsInNextPage}`)
                           // 设置 cloneTd 为完整的跨行单元格
                           cloneTd.rowspan = rowsInNextPage
                           cloneTd.originalRowspan = td.originalRowspan
                           // 不需要设置 linkTdPrevId，因为这个单元格完整地在第二页
                         } else {
                           // 拆分点不在起始行，需要在第一页显示跨行单元格的剩余部分
-                          console.log(`    将跨行单元格添加到 originTr，rowspan: ${rowsInNextPage}`)
-                          console.log(`    cloneTd 内容:`, {
-                            value: cloneTd.value.length,
-                            rowList: cloneTd.rowList?.length || 0
-                          })
-
                           // 先保存 cloneTd 的内容
                           const savedValue = [...cloneTd.value]
                           const savedRowList = [...(cloneTd.rowList || [])]
@@ -2098,7 +2021,6 @@ export class Draw {
 
                           if (existingTdIndex !== -1) {
                             // 替换现有的空单元格
-                            console.log(`    替换 originTr 中索引 ${existingTdIndex} 的空单元格`)
                             originTr.tdList[existingTdIndex] = {
                               ...originTr.tdList[existingTdIndex],
                               rowspan: rowsInNextPage,
@@ -2110,7 +2032,6 @@ export class Draw {
                             }
                           } else {
                             // 没有，添加新的单元格
-                            console.log(`    添加新的跨行单元格到 originTr`)
                             const newTd = {
                               ...td,
                               id: cloneTd.id,
@@ -2132,8 +2053,6 @@ export class Draw {
                               (a, b) => a.colIndex! - b.colIndex!
                             )
                           }
-
-                          console.log(`    已清空 cloneTd 并更新第一页`)
                         }
                       }
                     }
@@ -2158,25 +2077,6 @@ export class Draw {
               const cloneTrList = trList.splice(deleteStart, deleteCount)
               const pagingId = element.pagingId || getUUID()
               element.pagingId = pagingId
-
-              // DEBUG: 拆分到新页的调试信息
-              console.log('=== 表格拆分到新页 ===')
-              console.log('当前页码:', element.pagingIndex, '-> 新页码:', (element.pagingIndex! + 1))
-              console.log('拆分出行数:', cloneTrList.length)
-              console.log('第一列跨行信息:', cloneTrList[0]?.tdList[0] ? {
-                colIndex: cloneTrList[0].tdList[0].colIndex,
-                rowspan: cloneTrList[0].tdList[0].rowspan,
-                originalRowspan: cloneTrList[0].tdList[0].originalRowspan
-              } : 'not found')
-              console.log('当前表格（拆分后）行数:', element.trList?.length)
-              console.log('当前表格（拆分后）前3行跨行信息:', element.trList?.slice(0, 3).map((tr, idx) => ({
-                index: idx,
-                tdRowspans: tr.tdList.map(td => ({
-                  colIndex: td.colIndex,
-                  rowspan: td.rowspan,
-                  originalRowspan: td.originalRowspan
-                }))
-              })))
 
               // 追加拆分表格（不使用 deepClone，手动创建新对象，避免丢失 originalRowspan）
               const cloneElement: IElement = {
@@ -2222,14 +2122,6 @@ export class Draw {
                       const actualRowspan = Math.min(td.originalRowspan, maxRowspan)
 
                       if (td.rowspan !== actualRowspan) {
-                        console.log(`  修正跨页跨行单元格 rowspan: ${td.rowspan} -> ${actualRowspan}`, {
-                          colIndex: td.colIndex,
-                          trIndex,
-                          originalRowspan: td.originalRowspan,
-                          maxRowspan,
-                          actualRowspan,
-                          totalRows: cloneElement.trList!.length
-                        })
                         td.rowspan = actualRowspan
                       }
                     } else {
@@ -2239,14 +2131,6 @@ export class Draw {
                       const actualRowspan = Math.min(td.originalRowspan || td.rowspan, maxRowspan)
 
                       if (td.rowspan !== actualRowspan) {
-                        console.log(`  修正跨行单元格 rowspan（无 prevTd）: ${td.rowspan} -> ${actualRowspan}`, {
-                          colIndex: td.colIndex,
-                          trIndex,
-                          originalRowspan: td.originalRowspan,
-                          maxRowspan,
-                          actualRowspan,
-                          totalRows: cloneElement.trList!.length
-                        })
                         td.rowspan = actualRowspan
                       }
                     }
@@ -2254,13 +2138,43 @@ export class Draw {
                     // 没有拆分信息的跨行单元格，确保 rowspan 不超过表格剩余行数
                     const maxRowspan = cloneElement.trList!.length - trIndex
                     if (td.rowspan > maxRowspan) {
-                      console.log(`  修正跨行单元格 rowspan: ${td.rowspan} -> ${maxRowspan}`, {
-                        colIndex: td.colIndex,
-                        trIndex,
-                        totalRows: cloneElement.trList!.length
-                      })
                       td.rowspan = maxRowspan
                     }
+                  }
+                })
+
+                // 修复：移除后续行中被前面跨行单元格覆盖的多余单元格
+                // 例如：row0 有 rowspan=2 的单元格覆盖 col2-3，则 row1 不应该再有 col2 和 col3
+                cloneElement.trList?.forEach((tr, trIndex) => {
+                  if (trIndex === 0) return // 第一行不需要检查
+                  let d = tr.tdList.length - 1
+                  while (d >= 0) {
+                    const td = tr.tdList[d]
+                    // 检查前面的行是否有跨行单元格覆盖当前行
+                    let coveredByRowspan = false
+                    for (let i = trIndex - 1; i >= 0; i--) {
+                      const prevTr = cloneElement.trList![i]
+                      const rowspanTd = prevTr.tdList.find(rowTd => {
+                        // 检查跨行单元格是否覆盖当前行
+                        if (rowTd.rowspan <= (trIndex - i)) {
+                          return false // rowspan 不够，不能覆盖当前行
+                        }
+                        // 检查列范围是否重叠
+                        const colStart = rowTd.colIndex!
+                        const colEnd = colStart + rowTd.colspan - 1
+                        const tdStart = td.colIndex!
+                        const tdEnd = tdStart + td.colspan - 1
+                        return !(tdEnd < colStart || tdStart > colEnd)
+                      })
+                      if (rowspanTd) {
+                        coveredByRowspan = true
+                        break
+                      }
+                    }
+                    if (coveredByRowspan) {
+                      tr.tdList.splice(d, 1)
+                    }
+                    d--
                   }
                 })
 
@@ -2320,7 +2234,6 @@ export class Draw {
 
                 // 如果有缺失的列，添加占位单元格
                 if (missingCols.length > 0) {
-                  console.log(`  rowIndex: ${trIndex} 缺少列: ${missingCols.join(', ')}，添加占位单元格`)
                   missingCols.forEach(colIndex => {
                     // 查找前一行的相同列位置，看是否有跨行单元格覆盖当前列
                     let rowspanTd: ITd | undefined
@@ -2361,23 +2274,30 @@ export class Draw {
                 }
               })
 
-              console.log('  拆分后表格信息:', {
-                pagingIndex: cloneElement.pagingIndex,
-                trCount: cloneElement.trList?.length,
-                height: cloneElement.height
-              })
+              cloneElement.trList?.forEach((tr, trIndex) => {
+                const expectedColCount = element.colgroup!.length
+                const actualCoverage = new Array(expectedColCount).fill(false)
 
-              // DEBUG: 打印第二页表格每一行的单元格数量
-              console.log('  第二页表格每行单元格数:', cloneElement.trList?.map((tr, idx) => ({
-                rowIndex: idx,
-                tdCount: tr.tdList.length,
-                tds: tr.tdList.map(td => ({
-                  colIndex: td.colIndex,
-                  colspan: td.colspan,
-                  rowspan: td.rowspan,
-                  hasValue: td.value?.length > 0
-                }))
-              })))
+                // 检查每个单元格覆盖的列
+                tr.tdList.forEach(td => {
+                  for (let col = td.colIndex!; col < td.colIndex! + td.colspan; col++) {
+                    actualCoverage[col] = true
+                  }
+                })
+
+                // 检查前面的跨行单元格是否覆盖当前行
+                for (let i = 0; i < trIndex; i++) {
+                  const prevTr = cloneElement.trList![i]
+                  prevTr.tdList.forEach(td => {
+                    if (td.rowspan > trIndex - i) {
+                      // 跨行单元格覆盖当前行
+                      for (let col = td.colIndex!; col < td.colIndex! + td.colspan; col++) {
+                        actualCoverage[col] = true
+                      }
+                    }
+                  })
+                }
+              })
 
               // 更新表格内部元素的所属信息
               cloneElement.trList?.forEach(tr => {
@@ -2498,28 +2418,13 @@ export class Draw {
                 // 如果找到了拆分后的单元格（通过 linkTdPrevId 或 originalId），需要计算正确的索引
                 let newStartIndex = this.range.getRange().startIndex
 
-                console.log('=== 表格分页后上下文更新 ===', {
-                  newPositionContextIndex,
-                  newPositionContextTrIndex,
-                  newPositionContextTdIndex,
-                  currentStartIndex: newStartIndex,
-                  valueStartIndex: newTd.valueStartIndex,
-                  linkTdPrevId: newTd.linkTdPrevId,
-                  newTdValueLength: newTd.value.length,
-                  newTdPositionListLength: newTd.positionList?.length
-                })
-
                 // 如果新单元格有 valueStartIndex，说明它是拆分后的单元格
                 // 需要根据 valueStartIndex 调整光标位置
                 if (newTd.valueStartIndex !== undefined && newTd.linkTdPrevId) {
                   // 当前光标位置减去拆分点，得到拆分后单元格中的相对位置
                   // 但是需要确保结果在有效范围内
                   const relativeIndex = newStartIndex - newTd.valueStartIndex
-                  console.log('  计算相对索引:', {
-                    newStartIndex,
-                    valueStartIndex: newTd.valueStartIndex,
-                    relativeIndex
-                  })
+
                   if (relativeIndex >= 0 && relativeIndex < newTd.value.length) {
                     newStartIndex = relativeIndex
                   } else if (newTd.value.length > 0) {
@@ -2537,8 +2442,6 @@ export class Draw {
                     }
                   }
                 }
-
-                console.log('  最终 newStartIndex:', newStartIndex)
 
                 positionContext.index = newPositionContextIndex
                 positionContext.trIndex = newPositionContextTrIndex
@@ -2974,19 +2877,7 @@ export class Draw {
             this.elementList = this.elementList.slice(0, row.startIndex)
             break
           }
-          // DEBUG: 页面分割信息
-          console.log('=== 页面分割 ===', {
-            rowIndex: i,
-            rowHeight: row.height,
-            rowOffsetY,
-            pageHeight,
-            height,
-            needNewPage,
-            isPagedTable,
-            pageNo,
-            hasTable: row.elementList.some(e => e.type === ElementType.TABLE),
-            tablePagingIndex: tableElement?.pagingIndex
-          })
+
           pageHeight = marginHeight + row.height + rowOffsetY
           pageRowList.push([row])
           pageNo++

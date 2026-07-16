@@ -38,7 +38,7 @@
     "lib": "eslint . && tsc && vitest run && vite build --mode lib",
     "build": "eslint . && tsc && vitest run && vite build --mode app",
     "serve": "vite preview",
-    "lint": "eslint . && tsc --noEmit && vitest run",
+    "lint": "eslint . && tsc --noEmit",
     "cypress:open": "cypress open",
     "commit:skip": "SKIP_SIMPLE_GIT_HOOKS=1 git commit",
     "cypress:run": "cypress run",

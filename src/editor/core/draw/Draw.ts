@@ -1646,12 +1646,23 @@ export class Draw {
                                 )
                               )
                           )
-                          // 恢复 rowspan 和 originalRowspan
+                          // 合并拆分单元格的 rowspan
+                          // 重要：originalRowspan 表示原始合并时的跨行数，用于恢复合并后的总行数
+                          console.log(`[合并拆分表格] td.id=${td.id?.slice(0,8)}, td.rowspan=${td.rowspan}, td.originalRowspan=${td.originalRowspan}`)
+                          console.log(`[合并拆分表格] originalTd.id=${originalTd.id?.slice(0,8)}, originalTd.rowspan=${originalTd.rowspan}, originalTd.originalRowspan=${originalTd.originalRowspan}`)
+
+                          // 使用 originalRowspan 恢复合并后的 rowspan
+                          // 如果 originalRowspan 存在，说明单元格是被拆分的，使用它来恢复
+                          // 如果不存在，累加当前两段的 rowspan
                           if (td.originalRowspan !== undefined) {
-                            originalTd.originalRowspan = td.originalRowspan
+                            // 保持 originalRowspan 不变
+                            originalTd.rowspan = originalTd.originalRowspan ?? td.originalRowspan
+                          } else {
+                            // 没有 originalRowspan，说明是普通单元格，累加 rowspan
+                            originalTd.rowspan = (originalTd.rowspan || 0) + (td.rowspan || 0)
                           }
-                          originalTd.rowspan =
-                            originalTd.originalRowspan ?? originalTd.rowspan
+
+                          console.log(`[合并拆分表格后] originalTd.rowspan=${originalTd.rowspan}, originalTd.originalRowspan=${originalTd.originalRowspan}`)
                           break
                         }
                       }
@@ -1941,6 +1952,8 @@ export class Draw {
                         td.originalRowspan = td.rowspan
                       }
 
+                      console.log(`[跨页拆分] 处理跨行单元格 td.id=${td.id?.slice(0,8)}, td.trIndex=${td.trIndex}, td.rowspan=${td.rowspan}, td.originalRowspan=${td.originalRowspan}, 拆分点r=${r}`)
+
                       // 计算当前页和下一页的 rowspan
                       // 跨行单元格从 td.trIndex 开始，跨越 td.originalRowspan 行
                       // 拆分点在 r，需要计算：
@@ -1976,9 +1989,20 @@ export class Draw {
                         rowsInNextPage = td.originalRowspan - rowsInCurrentPage
                       }
 
+                      console.log(`[跨页拆分] rowsInCurrentPage=${rowsInCurrentPage}, rowsInNextPage=${rowsInNextPage}, originTrHasContent=${originTrHasContent}`)
+
                       // 只有当 rowsInCurrentPage > 0 时才设置当前页的 rowspan
                       if (rowsInCurrentPage > 0) {
+                        console.log(`[跨页拆分] 设置当前页 td.rowspan=${rowsInCurrentPage}, td.id=${td.id?.slice(0,8)}`)
                         td.rowspan = rowsInCurrentPage
+                      } else {
+                        console.log(`[跨页拆分] rowsInCurrentPage=0, 不设置 td.rowspan, td.id=${td.id?.slice(0,8)}`)
+                      }
+
+                      // 如果 rowsInNextPage <= 0，说明跨行单元格不需要拆分，跳过后续处理
+                      if (rowsInNextPage <= 0) {
+                        console.log(`[跨页拆分] rowsInNextPage <= 0, 不需要拆分，跳过`)
+                        return
                       }
 
                       const cloneTd = cloneTr.tdList.find(
@@ -1988,6 +2012,7 @@ export class Draw {
                       if (originTrHasContent) {
                         // 原始行有内容，cloneTr 已经插入到第一页
                         // 设置 cloneTd.rowspan 为剩余行数
+                        console.log(`[跨页拆分-originTrHasContent] 设置 cloneTd.rowspan=${rowsInNextPage}`)
                         cloneTd.rowspan = rowsInNextPage
                       } else {
                         // 原始行没有内容，cloneTr 会被移到下一页
@@ -1997,6 +2022,7 @@ export class Draw {
                           // 在这种情况下，不应该将跨行单元格添加到第一页
                           // 应该让整个跨行单元格保持在第二页
                           // 设置 cloneTd 为完整的跨行单元格
+                          console.log(`[跨页拆分-else] td.trIndex === r, cloneTd.rowspan=${rowsInNextPage}`)
                           cloneTd.rowspan = rowsInNextPage
                           cloneTd.originalRowspan = td.originalRowspan
                           // 不需要设置 linkTdPrevId，因为这个单元格完整地在第二页
@@ -2005,6 +2031,8 @@ export class Draw {
                           // 先保存 cloneTd 的内容
                           const savedValue = [...cloneTd.value]
                           const savedRowList = [...(cloneTd.rowList || [])]
+
+                          console.log(`[跨页拆分-else] td.trIndex !== r, 需要在第一页显示剩余部分, rowsInNextPage=${rowsInNextPage}`)
 
                           // 立即清空 cloneTd，防止被复制到 newTd
                           cloneTd.value = []
@@ -2021,6 +2049,7 @@ export class Draw {
 
                           if (existingTdIndex !== -1) {
                             // 替换现有的空单元格
+                            console.log(`[跨页拆分-else] 替换现有单元格, existingTdIndex=${existingTdIndex}, rowspan=${rowsInNextPage}`)
                             originTr.tdList[existingTdIndex] = {
                               ...originTr.tdList[existingTdIndex],
                               rowspan: rowsInNextPage,
@@ -2032,19 +2061,21 @@ export class Draw {
                             }
                           } else {
                             // 没有，添加新的单元格
+                            console.log(`[跨页拆分-else] 添加新单元格, rowspan=${rowsInNextPage}, colIndex=${cloneTd.colIndex}, colspan=${td.colspan}`)
                             const newTd = {
-                              ...td,
                               id: cloneTd.id,
                               originalId: cloneTd.originalId,
                               linkTdPrevId: cloneTd.linkTdPrevId,
                               colIndex: cloneTd.colIndex,
                               tdIndex: cloneTd.tdIndex,
-                              colspan: cloneTd.colspan,
+                              colspan: td.colspan,
                               rowspan: rowsInNextPage,
                               value: savedValue,
                               rowList: savedRowList,
                               original: cloneTd.original,
-                              originalRowspan: cloneTd.originalRowspan
+                              originalRowspan: cloneTd.originalRowspan,
+                              // 不复制 td 的 trIndex 等位置信息，因为这些属于原始单元格
+                              // 新单元格的位置信息会在后续 initTableElementIndex 中重新计算
                             }
                             originTr.tdList.push(newTd)
 
@@ -2103,6 +2134,7 @@ export class Draw {
                 tr.tdList.forEach(td => {
                   // 如果单元格有 linkTdPrevId，说明它是从前面页拆分过来的跨行单元格
                   if (td.linkTdPrevId && td.originalRowspan !== undefined && td.originalRowspan > 1) {
+                    console.log(`[修复跨行单元格] td.id=${td.id?.slice(0,8)}, td.rowspan=${td.rowspan}, td.originalRowspan=${td.originalRowspan}, trIndex=${trIndex}, trList.length=${cloneElement.trList!.length}`)
                     // 查找前一页对应的单元格
                     const prevTd = this.getTdById(td.linkTdPrevId!)
                     if (prevTd) {
@@ -2121,8 +2153,12 @@ export class Draw {
                       // 简化处理：确保 rowspan 不超过表格剩余行数，且如果 originalRowspan 足够大，覆盖整个表格
                       const actualRowspan = Math.min(td.originalRowspan, maxRowspan)
 
-                      if (td.rowspan !== actualRowspan) {
-                        td.rowspan = actualRowspan
+                      console.log(`[修复跨行单元格] prevTd.rowspan=${prevTd.rowspan}, maxRowspan=${maxRowspan}, actualRowspan=${actualRowspan}`)
+                      // 只有当 td.rowspan 超过 maxRowspan 时才需要修改
+                      // 不应该把 td.rowspan 改成比实际需要更小的值
+                      if (td.rowspan > maxRowspan) {
+                        console.log(`[修复跨行单元格] 修改 td.rowspan 从 ${td.rowspan} 到 ${maxRowspan}`)
+                        td.rowspan = maxRowspan
                       }
                     } else {
                       // prevTd 为 undefined 时（多次拆分场景）
@@ -2130,14 +2166,19 @@ export class Draw {
                       const maxRowspan = cloneElement.trList!.length - trIndex
                       const actualRowspan = Math.min(td.originalRowspan || td.rowspan, maxRowspan)
 
-                      if (td.rowspan !== actualRowspan) {
-                        td.rowspan = actualRowspan
+                      console.log(`[修复跨行单元格-noPrevTd] maxRowspan=${maxRowspan}, actualRowspan=${actualRowspan}`)
+                      // 只有当 td.rowspan 超过 maxRowspan 时才需要修改
+                      if (td.rowspan > maxRowspan) {
+                        console.log(`[修复跨行单元格-noPrevTd] 修改 td.rowspan 从 ${td.rowspan} 到 ${maxRowspan}`)
+                        td.rowspan = maxRowspan
                       }
                     }
                   } else if (td.rowspan > 1) {
                     // 没有拆分信息的跨行单元格，确保 rowspan 不超过表格剩余行数
                     const maxRowspan = cloneElement.trList!.length - trIndex
+                    console.log(`[修复跨行单元格-普通] td.id=${td.id?.slice(0,8)}, td.rowspan=${td.rowspan}, maxRowspan=${maxRowspan}`)
                     if (td.rowspan > maxRowspan) {
+                      console.log(`[修复跨行单元格-普通] 修改 td.rowspan 从 ${td.rowspan} 到 ${maxRowspan}`)
                       td.rowspan = maxRowspan
                     }
                   }
@@ -4010,6 +4051,31 @@ export class Draw {
         tdA?.id === tdB?.originalId ||
         tdA?.originalId === tdB?.id)
     )
+  }
+
+  public getAllLinkTds(id: string): ITd[] {
+    const result: ITd[] = []
+    const td = this.getTdById(id)
+    if (!td) return result
+
+    // 添加当前单元格
+    result.push(td)
+
+    // 向前查找
+    let prevTd = td.linkTdPrevId ? this.getTdById(td.linkTdPrevId) : null
+    while (prevTd) {
+      result.unshift(prevTd)
+      prevTd = prevTd.linkTdPrevId ? this.getTdById(prevTd.linkTdPrevId) : null
+    }
+
+    // 向后查找
+    let nextTd = td.linkTdNextId ? this.getTdById(td.linkTdNextId) : null
+    while (nextTd) {
+      result.push(nextTd)
+      nextTd = nextTd.linkTdNextId ? this.getTdById(nextTd.linkTdNextId) : null
+    }
+
+    return result
   }
 
   public getSplitTdValues(originalId: string) {

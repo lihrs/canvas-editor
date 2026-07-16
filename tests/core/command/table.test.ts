@@ -106,9 +106,7 @@ describe('表格与分隔命令', () => {
 
     expect(result?.isTable).toBe(true)
     expect(draw.getPosition().getPositionContext().tableId).toBe(innerTable.id)
-    expect(
-      draw.getElementList().some((element: any) => element.value === 'A')
-    ).toBe(true)
+    expect(draw.getElementList().some((element: any) => element.value === 'A')).toBe(true)
 
     draw.render({
       curIndex: result!.tdValueIndex,

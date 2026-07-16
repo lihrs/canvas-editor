@@ -131,15 +131,25 @@ export class TableOperate {
         for (let d = 0; d < tr.tdList.length; d++) {
           const td = tr.tdList[d]
           if (td.rowspan > 1 && td.rowIndex! + td.rowspan >= curTrNo + 1) {
+            console.log(`[insertTableTopRow] 更新单元格 td.id=${td.id?.slice(0,8)}, td.rowspan=${td.rowspan}, td.originalRowspan=${td.originalRowspan}`)
             td.rowspan += 1
-            if (td.originalId) {
-              const originalTd = this.draw.getTdById(td.originalId)
-              if (originalTd) {
-                originalTd.originalRowspan! += 1
-              }
-            } else if (td.originalRowspan !== undefined) {
+            // 检查单元格是否已经跨页拆分
+            // 如果没有跨页拆分，originalRowspan 也应该增加
+            // 如果已经跨页拆分，originalRowspan 保持不变
+            const hasPagingSplit = td.linkTdPrevId || td.linkTdNextId
+            if (!hasPagingSplit && td.originalRowspan !== undefined) {
               td.originalRowspan += 1
             }
+            // 同步更新所有拆分页中的相关单元格的 rowspan
+            const allTds = this.draw.getAllLinkTds(td.id!)
+            console.log(`[insertTableTopRow] 找到 ${allTds.length} 个关联单元格, hasPagingSplit=${hasPagingSplit}`)
+            allTds.forEach(linkedTd => {
+              if (linkedTd.id !== td.id) {
+                linkedTd.rowspan += 1
+                // 拆分页的单元格不更新 originalRowspan
+              }
+              console.log(`[insertTableTopRow] 更新关联单元格 linkedTd.id=${linkedTd.id?.slice(0,8)}, rowspan=${linkedTd.rowspan}, originalRowspan=${linkedTd.originalRowspan}`)
+            })
           }
         }
       }
@@ -147,10 +157,14 @@ export class TableOperate {
       // 可能存在分页单元格
       curTr.tdList.forEach(td => {
         if (td.originalId) {
-          const originalTd = this.draw.getTdById(td.originalId)
-          if (originalTd) {
-            originalTd.originalRowspan! += 1
-          }
+          console.log(`[insertTableTopRow-else] 更新分页单元格 td.originalId=${td.originalId?.slice(0,8)}`)
+          // 同步更新所有拆分页中的相关单元格的 rowspan
+          // 已经跨页拆分的单元格，originalRowspan 保持不变
+          const allTds = this.draw.getAllLinkTds(td.originalId)
+          allTds.forEach(linkedTd => {
+            linkedTd.rowspan += 1
+            console.log(`[insertTableTopRow-else] 更新关联单元格 linkedTd.id=${linkedTd.id?.slice(0,8)}, rowspan=${linkedTd.rowspan}, originalRowspan=${linkedTd.originalRowspan}`)
+          })
         }
       })
     }
@@ -228,15 +242,25 @@ export class TableOperate {
         for (let d = 0; d < tr.tdList.length; d++) {
           const td = tr.tdList[d]
           if (td.rowspan > 1 && td.rowIndex! + td.rowspan >= curTrNo + 1) {
+            console.log(`[insertTableBottomRow] 更新单元格 td.id=${td.id?.slice(0,8)}, td.rowspan=${td.rowspan}, td.originalRowspan=${td.originalRowspan}`)
             td.rowspan += 1
-            if (td.originalId) {
-              const originalTd = this.draw.getTdById(td.originalId)
-              if (originalTd) {
-                originalTd.originalRowspan! += 1
-              }
-            } else if (td.originalRowspan !== undefined) {
+            // 检查单元格是否已经跨页拆分
+            // 如果没有跨页拆分，originalRowspan 也应该增加
+            // 如果已经跨页拆分，originalRowspan 保持不变
+            const hasPagingSplit = td.linkTdPrevId || td.linkTdNextId
+            if (!hasPagingSplit && td.originalRowspan !== undefined) {
               td.originalRowspan += 1
             }
+            // 同步更新所有拆分页中的相关单元格的 rowspan
+            const allTds = this.draw.getAllLinkTds(td.id!)
+            console.log(`[insertTableBottomRow] 找到 ${allTds.length} 个关联单元格, hasPagingSplit=${hasPagingSplit}`)
+            allTds.forEach(linkedTd => {
+              if (linkedTd.id !== td.id) {
+                linkedTd.rowspan += 1
+                // 拆分页的单元格不更新 originalRowspan
+              }
+              console.log(`[insertTableBottomRow] 更新关联单元格 linkedTd.id=${linkedTd.id?.slice(0,8)}, rowspan=${linkedTd.rowspan}, originalRowspan=${linkedTd.originalRowspan}`)
+            })
           }
         }
       }

@@ -830,7 +830,13 @@ export class TableOperate {
         }
       }
     }
-    // 移除多余单元格
+
+    // 修复：如果锚点单元格的 rowspan > 1 且没有设置 originalRowspan，需要初始化
+    // 否则跨页拆分时无法正确计算拆分后的行数
+    if (anchorTd.rowspan > 1 && anchorTd.originalRowspan === undefined) {
+      anchorTd.originalRowspan = anchorTd.rowspan
+    }
+
     for (let t = 0; t < curTrList.length; t++) {
       const tr = curTrList[t]
       let d = 0
@@ -859,6 +865,33 @@ export class TableOperate {
     })
     const curIndex = anchorTd.value.length - 1
 
+    // 检查每一行的列覆盖是否完整
+    const colgroup = element.colgroup!
+    curTrList.forEach((tr, trIndex) => {
+      const expectedColCount = colgroup.length
+      const actualCoverage = new Array(expectedColCount).fill(false)
+
+      // 检查每个单元格覆盖的列
+      tr.tdList.forEach(td => {
+        for (let col = td.colIndex!; col < td.colIndex! + td.colspan; col++) {
+          actualCoverage[col] = true
+        }
+      })
+
+      // 检查前面的跨行单元格是否覆盖当前行
+      for (let i = 0; i < trIndex; i++) {
+        const prevTr = curTrList[i]
+        prevTr.tdList.forEach(td => {
+          if (td.rowspan > trIndex - i) {
+            // 跨行单元格覆盖当前行
+            for (let col = td.colIndex!; col < td.colIndex! + td.colspan; col++) {
+              actualCoverage[col] = true
+            }
+          }
+        })
+      }
+    })
+
     this.range.setRange(curIndex, curIndex)
     // 重新渲染
     this.draw.render()
@@ -868,7 +901,7 @@ export class TableOperate {
   public cancelMergeTableCell() {
     const positionContext = this.position.getPositionContext()
     if (!positionContext.isTable) return
-    const { tdIndex, trIndex } = positionContext
+    const { index, tdIndex, trIndex } = positionContext
     const originalElementList = this.draw.getOriginalElementList()
     let element = originalElementList[index!]
     let curTrList = element.trList!

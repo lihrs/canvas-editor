@@ -861,6 +861,10 @@ export class TableOperate {
       anchorTd.originalRowspan = anchorTd.rowspan
     }
 
+    // [诊断日志] 合并结果
+    console.log(`[合并单元格] anchorTd.id=${anchorTd.id?.slice(0,8)}, colIndex=${anchorTd.colIndex}, rowspan=${anchorTd.rowspan}, colspan=${anchorTd.colspan}, originalRowspan=${(anchorTd as any).originalRowspan}`)
+    console.log(`[合并单元格] 合并了 ${mergeTdIdList.length} 个单元格:`, mergeTdIdList.map(id => id.slice(0,8)))
+
     for (let t = 0; t < curTrList.length; t++) {
       const tr = curTrList[t]
       let d = 0

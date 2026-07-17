@@ -705,6 +705,8 @@ export class TableParticle {
           td.mainHeight = curTdHeight
           // 内容高度大于当前单元格高度需增加
           if (td.rowspan > 1) {
+            // [诊断日志] 跨行单元格
+            console.log(`[computeTrHeight-跨行] td.id=${td.id?.slice(0,8)}, trIndex=${trIndex}, colIndex=${colIndex}, rowspan=${td.rowspan}, originalRowspan=${(td as any).originalRowspan}, colspan=${td.colspan}, curTdHeight=${curTdHeight}`)
             for (let c = 0; c < td.colspan; c++) {
               lastRowSpanId[td.colIndex! + c] = td.id!
             }
@@ -793,6 +795,9 @@ export class TableParticle {
         }
       }
     }
+    // [诊断日志] 计算结束
+    const finalRowHeights = trList.map((tr, idx) => ({idx, height: tr.height, minHeight: tr.minHeight, tdCount: tr.tdList.length}))
+    console.log(`[computeTrHeight-结束] trList.length=${trList.length}, 行高:`, JSON.stringify(finalRowHeights))
     // 需要重新计算表格内值
     this.computeRowColInfo(element)
   }

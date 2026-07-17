@@ -1589,6 +1589,14 @@ export class Draw {
         // 查看后续表格是否属于同一个源表格-存在即合并
         if (element.pagingId) {
           const positionContext = this.position.getPositionContext()
+          // [诊断日志] 合并前状态
+          let preMergePartCount = 1
+          let checkIdx = i + 1
+          while (checkIdx < elementList.length && elementList[checkIdx].pagingId === element.pagingId) {
+            preMergePartCount++
+            checkIdx++
+          }
+          console.log(`[表格合并-开始] element[${i}].id=${element.id?.slice(0,8)}, pagingId=${element.pagingId?.slice(0,8)}, 共${preMergePartCount}个表格片段待合并, 当前trList.length=${element.trList!.length}`)
           let tableIndex = i + 1
           let combineCount = 0
           while (tableIndex < elementList.length) {
@@ -1688,6 +1696,14 @@ export class Draw {
           }
         }
 
+        // [诊断日志] 合并后状态
+        if (element.pagingId) {
+          const mergedRowspans = element.trList!.flatMap((tr, idx) =>
+            tr.tdList.filter(td => td.rowspan > 1).map(td => ({trIdx: idx, colIdx: td.colIndex, id: td.id?.slice(0,8), rowspan: td.rowspan, origRowspan: (td as any).originalRowspan}))
+          )
+          console.log(`[表格合并-完成] element[${i}].trList.length=${element.trList!.length}, 跨行单元格:`, JSON.stringify(mergedRowspans))
+        }
+
         element.pagingIndex = element.pagingIndex ?? 0
         // 计算出表格高度
         this.tableParticle.computeTrHeight(element, (td: ITd) => {
@@ -1767,6 +1783,20 @@ export class Draw {
             let deleteCount = 0
             let preTrHeight = 0
 
+            // [诊断日志] 拆分前表格结构
+            console.log(`[表格拆分-开始] tableId=${element.id?.slice(0,8)}, pagingId=${element.pagingId?.slice(0,8)}, pagingIndex=${element.pagingIndex}, trList.length=${trList.length}, usableHeight=${usableHeight}, elementHeight=${elementHeight}`)
+            const rowspanCells: {trIdx: number, colIdx: number, id: string, rowspan: number, originalRowspan: number}[] = []
+            trList.forEach((tr, trIdx) => {
+              tr.tdList.forEach(td => {
+                if (td.rowspan > 1) {
+                  rowspanCells.push({trIdx, colIdx: td.colIndex!, id: td.id?.slice(0,8) || '', rowspan: td.rowspan, originalRowspan: (td as any).originalRowspan})
+                }
+              })
+            })
+            if (rowspanCells.length) {
+              console.log(`[表格拆分-开始] 跨行单元格列表:`, JSON.stringify(rowspanCells))
+            }
+
             // 大于一行时再拆分避免循环
             for (let r = 0; r < trList.length; r++) {
               const tr = trList[r]
@@ -1775,6 +1805,10 @@ export class Draw {
                 curPagePreHeight + rowMarginHeight + preTrHeight + trHeight >
                 height
               ) {
+                // [诊断日志] 行溢出
+                console.log(`[表格拆分-溢出] r=${r}, deleteStart=${deleteStart}, preTrHeight=${preTrHeight}, trHeight=${trHeight}, trList.length=${trList.length}, curPagePreHeight=${curPagePreHeight}, height=${height}`)
+                // 修复：确保deleteStart从当前行开始计算，避免cloneTr插入位置错误
+                deleteStart = r
                 // 需要拆分的表格行
                 const originTr = tr
                 // 拆分出来的表格行
@@ -1902,11 +1936,16 @@ export class Draw {
 
                 const minHeightOverflow = originTr.minHeight! > usableHeight
 
+                // [诊断日志] 内容检查
+                console.log(`[表格拆分-内容] r=${r}, originTrHasContent=${originTrHasContent}, cloneTrHasContent=${cloneTrHasContent}, minHeightOverflow=${minHeightOverflow}, deleteStart=${deleteStart}, originTr.minHeight=${originTr.minHeight}, usableHeight=${usableHeight}`)
+
                 if (cloneTrHasContent || minHeightOverflow) {
                   if (
                     originTrHasContent ||
                     (!cloneTrHasContent && minHeightOverflow)
                   ) {
+                    // [诊断日志] 插入 cloneTr
+                    console.log(`[表格拆分-插入cloneTr] r=${r}, deleteStart=${deleteStart}, 将在 trList 位置 ${deleteStart + 1} 插入 cloneTr（共${cloneTr.tdList.length}个td）`)
                     // 情况1：原始行有内容，需要保留在第一页
                     // 插入 cloneTr 到第一页，作为拆分点所在的行
                     if (minHeightOverflow) {
@@ -1936,6 +1975,11 @@ export class Draw {
                     deleteStart += 1
                     deleteCount = trList.length - deleteStart
                     restoreValue = false
+                  } else {
+                    // 修复：当originTrHasContent=false时，deleteCount也需要设置
+                    // 否则break之后deleteCount=0会导致拆分不执行
+                    deleteCount = trList.length - deleteStart
+                    console.log(`[表格拆分-插入cloneTr] 未插入cloneTr(originTrHasContent=false), deleteCount=${deleteCount}, deleteStart=${deleteStart}`)
                   }
 
                   // 处理跨行单元格
@@ -1987,6 +2031,13 @@ export class Draw {
                         rowsInCurrentPage = r - td.trIndex! + (originTrHasContent ? 1 : 0)
                         // 下一页的行数 = 原始行数 - 当前页占用的行数
                         rowsInNextPage = td.originalRowspan - rowsInCurrentPage
+                      }
+
+                      // 修复：当 cloneTr 被插入时（originTrHasContent=true），
+                      // cloneTr 会作为额外的一行进入下一页，需要在 rowsInNextPage 中体现
+                      if (originTrHasContent && rowsInNextPage > 0) {
+                        rowsInNextPage += 1
+                        console.log(`[跨页拆分] 因cloneTr插入，rowsInNextPage调整为${rowsInNextPage}`)
                       }
 
                       console.log(`[跨页拆分] rowsInCurrentPage=${rowsInCurrentPage}, rowsInNextPage=${rowsInNextPage}, originTrHasContent=${originTrHasContent}`)
@@ -2094,16 +2145,22 @@ export class Draw {
                       td.value.push(...cloneTdList[index].value)
                     })
                   }
+                  // [诊断日志] break前状态
+                  console.log(`[表格拆分-break] r=${r}, deleteStart=${deleteStart}, deleteCount=${deleteCount}, trList.length=${trList.length}, restoreValue=${restoreValue}`)
                   break
                 }
               }
               deleteStart = r + 1
               deleteCount = trList.length - deleteStart
+              // [诊断日志] 无内容溢出行（path 3）
+              console.log(`[表格拆分-无内容] r=${r}, deleteStart→${deleteStart}, deleteCount→${deleteCount}, preTrHeight=${preTrHeight}`)
               preTrHeight += trHeight
               usableHeight -= trHeight
             }
 
             if (deleteCount) {
+              // [诊断日志] 执行拆分
+              console.log(`[表格拆分-执行] deleteStart=${deleteStart}, deleteCount=${deleteCount}, trList.length=${trList.length}, 拆分后当前页行数=${trList.length - deleteCount}`)
               // 继续对单元格进行拆分
               const cloneTrList = trList.splice(deleteStart, deleteCount)
               const pagingId = element.pagingId || getUUID()
@@ -2366,6 +2423,15 @@ export class Draw {
                 })
               })
               this.spliceElementList(elementList, i + 1, 0, [cloneElement])
+
+              // [诊断日志] 拆分后结果
+              console.log(`[表格拆分-结果] 当前页行数=${element.trList!.length}, 下一页行数=${cloneElement.trList!.length}, cloneElement.pagingIndex=${cloneElement.pagingIndex}`)
+              cloneElement.trList?.forEach((tr, idx) => {
+                const rowspanTds = tr.tdList.filter(td => td.rowspan > 1)
+                if (rowspanTds.length) {
+                  console.log(`[表格拆分-结果] 下一页row${idx}: rowspanTds=`, rowspanTds.map(td => ({colIdx: td.colIndex, rowspan: td.rowspan, origRowspan: (td as any).originalRowspan, hasLinkPrev: !!td.linkTdPrevId})))
+                }
+              })
 
               // 计算出表格高度
               this.tableParticle.computeTrHeight(element)

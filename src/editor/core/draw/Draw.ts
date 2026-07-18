@@ -1910,11 +1910,12 @@ export class Draw {
                 const giantRowOverflow = originTr.minHeight! > fullPageHeight
 
                 // 被拆分行的上半部分是否保留在第一页：
-                // 原行本身有内容 -> 保留在第一页，按 minHeight 将剩余空白拆分到下一页
-                // （即使拆分行没有内容，也要把用不完的空白高度带过去）；
-                // 原行无内容且拆分行也无内容时，只有"巨型空行"才强制拆分，否则整行下移
+                // 原行与拆分行都有内容 -> 按内容精确拆分，保留原行在第一页
+                // 无内容可拆但行高超过整页 -> 强制按高度拆分（巨型空行）
+                // 仅原行有内容但拆分行无内容 -> 整行连同后续行下移（不插入空 cloneTr，
+                //   因为 merge+re-split 循环会让空 clone 持续重现为占位行）
                 const splitRowKeptOnPage1 =
-                  originTrHasContent ||
+                  (originTrHasContent && cloneTrHasContent) ||
                   (!cloneTrHasContent && giantRowOverflow)
 
                 if (cloneTrHasContent || minHeightOverflow) {

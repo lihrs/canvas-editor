@@ -508,10 +508,10 @@ export function formatElementList(
               ...(isNestedControl
                 ? {}
                 : {
-                    controlId,
-                    control: el.control,
-                    controlComponent: ControlComponent.VALUE
-                  }),
+                  controlId,
+                  control: el.control,
+                  controlComponent: ControlComponent.VALUE
+                }),
               value: value === '\n' ? ZERO : value,
               type: element.type || ElementType.TEXT
             })
@@ -1090,10 +1090,10 @@ export function getAnchorElement(
   const anchorNextElement = elementList[anchorIndex + 1]
   // 非列表元素 && 当前元素是换行符 && 下一个元素不是换行符 && 区域相同 => 则以下一个元素作为参考元素
   return !anchorElement.listId &&
-    anchorElement.value === ZERO &&
-    anchorNextElement &&
-    anchorNextElement.value !== ZERO &&
-    anchorElement.areaId === anchorNextElement.areaId
+  anchorElement.value === ZERO &&
+  anchorNextElement &&
+  anchorNextElement.value !== ZERO &&
+  anchorElement.areaId === anchorNextElement.areaId
     ? anchorNextElement
     : anchorElement
 }
@@ -1433,7 +1433,7 @@ export function createDomFromElementList(
           }
         } else if (element.block?.type === BlockType.IFRAME) {
           const { src, srcdoc, sandbox, allow } =
-            element.block.iframeBlock || {}
+          element.block.iframeBlock || {}
           if (src || srcdoc) {
             const iframe = document.createElement('iframe')
             iframe.sandbox.add(...(sandbox || IFrameBlock.sandbox))
@@ -1840,8 +1840,9 @@ export function getElementListByHTML(
                   TdBorder.BOTTOM,
                   TdBorder.LEFT
                 ]
+                // 每一边独立判断：声明实线的方向记为实线，声明无边框的方向补虚线，
+                // 避免因整体判定而导致部分声明了实线的格子丢失其余方向的虚线
                 if (solidSides.length) {
-                  // 有部分实线：只记录实线方向，不补虚线（避免混乱相邻格子的边界）
                   td.borderTypes = solidSides
                 }
                 const dashSides = allSides.filter(
@@ -1862,10 +1863,31 @@ export function getElementListByHTML(
               0
             )
             const width = Math.ceil(options.innerWidth / tdCount)
+            // 部分外部来源（如Word）不生成colgroup，列宽写在各td上，
+            // 需要从跨列数为1的单元格里还原每列真实宽度，避免所有列宽被平均拉平
+            const colWidths: (number | undefined)[] = new Array(tdCount).fill(
+              undefined
+            )
+            if (!colElements.length) {
+              element.trList!.forEach(tr => {
+                let colIndex = 0
+                tr.tdList.forEach(td => {
+                  if (td.colspan === 1 && colWidths[colIndex] === undefined) {
+                    const w = td.width
+                    if (w && !isNaN(w)) {
+                      colWidths[colIndex] = w
+                    }
+                  }
+                  colIndex += td.colspan
+                })
+              })
+            }
             for (let i = 0; i < tdCount; i++) {
               const colElement = colElements[i]?.getAttribute('width')
               element.colgroup!.push({
-                width: colElement ? parseFloat(colElement) : width
+                width: colElement
+                  ? parseFloat(colElement)
+                  : colWidths[i] ?? width
               })
             }
             elementList.push(element)
@@ -1986,8 +2008,8 @@ export function getTextFromElementList(elementList: IElement[]) {
           const controlValue = element.control!.value?.[0]?.value || ''
           textLike = controlValue
             ? `${element.control?.preText || ''}${controlValue}${
-                element.control?.postText || ''
-              }`
+              element.control?.postText || ''
+            }`
             : ''
         } else if (element.type === ElementType.DATE) {
           textLike = element.valueList?.map(v => v.value).join('') || ''

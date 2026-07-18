@@ -157,6 +157,7 @@ export function pasteByEvent(host: CanvasEvent, evt: ClipboardEvent) {
       }
       if (item.type === 'text/html' && isHTML) {
         item.getAsString(htmlText => {
+          console.log('[pasteByEvent] 走 HTML 解析路径 htmlText=', htmlText)
           pasteHTML(host, htmlText)
         })
         break

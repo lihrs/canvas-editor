@@ -221,6 +221,58 @@ export class TableParticle {
         isDrawFullBorder: isExternalBorderType
       })
     }
+    // 收集所有单元格实线的线段区间，供虚线渲染时判重叠，
+    // 避免相邻格子一侧实线、一侧虚线共享同一条物理边界（哪怕分段长度不同、坐标存在1-2px误差）时重叠出现阴影双线
+    // 跨行/跨列格子的坐标是累加行高列宽再取整得到的，与逐格累加的坐标可能存在1-2px舍入误差，
+    // 因此 key（所在横线的y值/竖线的x值）和区间比较都需要容差
+    const KEY_TOLERANCE = 2
+    type ISegment = { key: number; start: number; end: number }
+    const hSolidSegments: ISegment[] = []
+    const vSolidSegments: ISegment[] = []
+    const addSegment = (list: ISegment[], key: number, a: number, b: number) => {
+      list.push({ key, start: Math.min(a, b), end: Math.max(a, b) })
+    }
+    // 判断 [a, b] 区间是否与 list 中某条 key 相近（容差内）且区间存在真实重叠（非仅端点相邻）的线段重合
+    // 注意：容差只用于 key（轴坐标）的模糊匹配，不应用于区间比较，
+    // 否则仅共享一个端点、本不重叠的相邻区间（如两个不同列的边框）会被误判为重叠
+    const isOverlapped = (
+      list: ISegment[],
+      key: number,
+      a: number,
+      b: number
+    ) => {
+      const lo = Math.min(a, b)
+      const hi = Math.max(a, b)
+      return list.some(
+        seg =>
+          Math.abs(seg.key - key) <= KEY_TOLERANCE &&
+          seg.start < hi &&
+          seg.end > lo
+      )
+    }
+    for (let t = 0; t < trList.length; t++) {
+      const tr = trList[t]
+      for (let d = 0; d < tr.tdList.length; d++) {
+        const td = tr.tdList[d]
+        if (!td.borderTypes?.length) continue
+        const width = td.width! * scale
+        const height = td.height! * scale
+        const x = Math.round(td.x! * scale + startX + width)
+        const y = Math.round(td.y! * scale + startY)
+        if (td.borderTypes.includes(TdBorder.TOP)) {
+          addSegment(hSolidSegments, y, x - width, x)
+        }
+        if (td.borderTypes.includes(TdBorder.RIGHT)) {
+          addSegment(vSolidSegments, x, y, y + height)
+        }
+        if (td.borderTypes.includes(TdBorder.BOTTOM)) {
+          addSegment(hSolidSegments, y + height, x - width, x)
+        }
+        if (td.borderTypes.includes(TdBorder.LEFT)) {
+          addSegment(vSolidSegments, x - width, y, y + height)
+        }
+      }
+    }
     // 渲染单元格
     for (let t = 0; t < trList.length; t++) {
       const tr = trList[t]
@@ -242,6 +294,12 @@ export class TableParticle {
         const height = td.height! * scale
         const x = Math.round(td.x! * scale + startX + width)
         const y = Math.round(td.y! * scale + startY)
+        const bottomOverlapped = isOverlapped(
+          hSolidSegments,
+          y + height,
+          x - width,
+          x
+        )
         ctx.translate(0.5, 0.5)
         // 绘制线条
         ctx.beginPath()
@@ -266,29 +324,41 @@ export class TableParticle {
           ctx.lineTo(x - width, y + height)
           ctx.stroke()
         }
-        // 单元格虚线边框（borderDashTypes）
+        // 单元格虚线边框（borderDashTypes），跳过与相邻格子实线区间重叠的边
         if (td.borderDashTypes?.length) {
           ctx.save()
           ctx.setLineDash([3, 3])
-          if (td.borderDashTypes.includes(TdBorder.TOP)) {
+          if (
+            td.borderDashTypes.includes(TdBorder.TOP) &&
+            !isOverlapped(hSolidSegments, y, x - width, x)
+          ) {
             ctx.beginPath()
             ctx.moveTo(x - width, y)
             ctx.lineTo(x, y)
             ctx.stroke()
           }
-          if (td.borderDashTypes.includes(TdBorder.RIGHT)) {
+          if (
+            td.borderDashTypes.includes(TdBorder.RIGHT) &&
+            !isOverlapped(vSolidSegments, x, y, y + height)
+          ) {
             ctx.beginPath()
             ctx.moveTo(x, y)
             ctx.lineTo(x, y + height)
             ctx.stroke()
           }
-          if (td.borderDashTypes.includes(TdBorder.BOTTOM)) {
+          if (
+            td.borderDashTypes.includes(TdBorder.BOTTOM) &&
+            !bottomOverlapped
+          ) {
             ctx.beginPath()
             ctx.moveTo(x, y + height)
             ctx.lineTo(x - width, y + height)
             ctx.stroke()
           }
-          if (td.borderDashTypes.includes(TdBorder.LEFT)) {
+          if (
+            td.borderDashTypes.includes(TdBorder.LEFT) &&
+            !isOverlapped(vSolidSegments, x - width, y, y + height)
+          ) {
             ctx.beginPath()
             ctx.moveTo(x - width, y)
             ctx.lineTo(x - width, y + height)

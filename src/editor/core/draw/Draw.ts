@@ -1837,7 +1837,9 @@ export class Draw {
                             value: [],
                             rowList: [],
                             original: originTd,
-                            originalRowspan: originTd.originalRowspan  // 继承原始的跨行数
+                            originalRowspan: originTd.originalRowspan,  // 继承原始的跨行数
+                            borderTypes: originTd.borderTypes,
+                            borderDashTypes: originTd.borderDashTypes
                           }
                     })
                     // 过滤跨列单元格 确保colspan都是>0
@@ -2140,6 +2142,27 @@ export class Draw {
               // 使后续跨行单元格的 rowspan 计算基于新表格的行序号，而非原始表格的行序号
               this.tableParticle.computeTrHeight(cloneElement)
 
+              // 分页 cloneElement 的格子可能丢失边框属性，通过 tdMap 从原始格子补回
+              cloneElement.trList?.forEach(tr => {
+                tr.tdList.forEach(td => {
+                  if (
+                    td.linkTdPrevId &&
+                    td.borderTypes === undefined &&
+                    td.borderDashTypes === undefined
+                  ) {
+                    const prevTd = this.tdMap.get(td.linkTdPrevId)
+                    if (prevTd) {
+                      if (prevTd.borderTypes !== undefined) {
+                        td.borderTypes = prevTd.borderTypes
+                      }
+                      if (prevTd.borderDashTypes !== undefined) {
+                        td.borderDashTypes = prevTd.borderDashTypes
+                      }
+                    }
+                  }
+                })
+              })
+
               // 修复跨行单元格的 rowspan：确保拆分后的跨行单元格正确显示
               // 遍历拆分出的表格，检查每个跨行单元格
               cloneElement.trList?.forEach((tr, trIndex) => {
@@ -2190,6 +2213,26 @@ export class Draw {
 
               // 计算出表格高度
               this.tableParticle.computeTrHeight(element)
+              // 分页格子可能丢失边框属性，通过 tdMap 从原始格子补回
+              element.trList?.forEach(tr => {
+                tr.tdList.forEach(td => {
+                  if (
+                    td.linkTdPrevId &&
+                    td.borderTypes === undefined &&
+                    td.borderDashTypes === undefined
+                  ) {
+                    const prevTd = this.tdMap.get(td.linkTdPrevId)
+                    if (prevTd) {
+                      if (prevTd.borderTypes !== undefined) {
+                        td.borderTypes = prevTd.borderTypes
+                      }
+                      if (prevTd.borderDashTypes !== undefined) {
+                        td.borderDashTypes = prevTd.borderDashTypes
+                      }
+                    }
+                  }
+                })
+              })
               const tableHeight = this.tableParticle.getTableHeight(element)
               const elementHeight = tableHeight * scale
               element.height = tableHeight

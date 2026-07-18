@@ -62,6 +62,8 @@ export const EDITOR_ELEMENT_ZIP_ATTR: Array<keyof IElement> = [
   'tableToolDisabled',
   'borderType',
   'borderColor',
+  'borderWidth',
+  'borderExternalWidth',
   'translateX',
   'width',
   'height',
@@ -104,6 +106,7 @@ export const TABLE_TD_ZIP_ATTR: Array<keyof ITd> = [
   'verticalAlign',
   'backgroundColor',
   'borderTypes',
+  'borderDashTypes',
   'slashTypes',
   'disabled',
   'deletable'

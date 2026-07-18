@@ -1317,6 +1317,21 @@ export function createDomFromElementList(
         } else if (element.borderType === TableBorder.EXTERNAL) {
           tableDom.style.border = borderStyle
         }
+        if (element.borderType) {
+          tableDom.setAttribute('data-border-type', element.borderType)
+        }
+        if (element.borderColor) {
+          tableDom.setAttribute('data-border-color', element.borderColor)
+        }
+        if (element.borderWidth !== undefined) {
+          tableDom.setAttribute('data-border-width', String(element.borderWidth))
+        }
+        if (element.borderExternalWidth !== undefined) {
+          tableDom.setAttribute(
+            'data-border-external-width',
+            String(element.borderExternalWidth)
+          )
+        }
         tableDom.style.width = `${element.width}px`
         // colgroup
         const colgroupDom = document.createElement('colgroup')
@@ -1441,6 +1456,9 @@ export function createDomFromElementList(
         const hr = document.createElement('hr')
         if (element.dashArray?.length) {
           hr.setAttribute('data-dash-array', element.dashArray.join(','))
+        }
+        if (element.lineWidth !== undefined) {
+          hr.setAttribute('data-line-width', String(element.lineWidth))
         }
         clipboardDom.append(hr)
       } else if (element.type === ElementType.CHECKBOX) {
@@ -1667,10 +1685,25 @@ export function getElementListByHTML(
           })
           elementList.push(listElement)
         } else if (node.nodeName === 'HR') {
-          elementList.push({
+          const separatorElement: IElement = {
             value: '\n',
             type: ElementType.SEPARATOR
-          })
+          }
+          const dataDashArray = (<HTMLElement>node).getAttribute(
+            'data-dash-array'
+          )
+          if (dataDashArray) {
+            separatorElement.dashArray = dataDashArray
+              .split(',')
+              .map(item => Number(item))
+          }
+          const dataLineWidth = (<HTMLElement>node).getAttribute(
+            'data-line-width'
+          )
+          if (dataLineWidth) {
+            separatorElement.lineWidth = Number(dataLineWidth)
+          }
+          elementList.push(separatorElement)
         } else if (node.nodeName === 'IMG') {
           const { src, width, height } = node as HTMLImageElement
           if (src && width && height) {
@@ -1723,6 +1756,28 @@ export function getElementListByHTML(
             colgroup: [],
             trList: []
           }
+          const dataBorderType = tableElement.getAttribute('data-border-type')
+          if (dataBorderType) {
+            element.borderType = dataBorderType as TableBorder
+          } else {
+            // 外部粘贴（Word/WPS等无 data-border-type 标记）：
+            // 用 EMPTY 模式 + 逐单元格边框还原，无边框的格子补充虚线 borderDashTypes
+            element.borderType = TableBorder.EMPTY
+          }
+          const dataBorderColor = tableElement.getAttribute('data-border-color')
+          if (dataBorderColor) {
+            element.borderColor = dataBorderColor
+          }
+          const dataBorderWidth = tableElement.getAttribute('data-border-width')
+          if (dataBorderWidth) {
+            element.borderWidth = parseFloat(dataBorderWidth)
+          }
+          const dataBorderExternalWidth = tableElement.getAttribute(
+            'data-border-external-width'
+          )
+          if (dataBorderExternalWidth) {
+            element.borderExternalWidth = parseFloat(dataBorderExternalWidth)
+          }
           // colgroup
           const colElements = tableElement.querySelectorAll('colgroup col')
           // 基础数据
@@ -1751,6 +1806,50 @@ export function getElementListByHTML(
               }
               if (tableCell.style.backgroundColor) {
                 td.backgroundColor = tableCell.style.backgroundColor
+              }
+              // 外部粘贴时，读取行内声明边框（不用 getComputedStyle，避免合并格解析偏差）
+              if (!dataBorderType) {
+                const s = tableCell.style
+                const rawStyle = tableCell.getAttribute('style') || ''
+                const hasBorderInRaw = (side: string) => {
+                  const reg = new RegExp(
+                    `border-${side}\\s*:[^;]*(?:solid|dashed|dotted|double|groove|ridge|inset|outset)`,
+                    'i'
+                  )
+                  return reg.test(rawStyle)
+                }
+                const hasBorder = (style: string, width: string, side: string) =>
+                  (!!style && style !== 'none' && parseFloat(width) > 0) ||
+                  hasBorderInRaw(side)
+                const solidSides: TdBorder[] = []
+                if (hasBorder(s.borderTopStyle, s.borderTopWidth, 'top')) {
+                  solidSides.push(TdBorder.TOP)
+                }
+                if (hasBorder(s.borderRightStyle, s.borderRightWidth, 'right')) {
+                  solidSides.push(TdBorder.RIGHT)
+                }
+                if (hasBorder(s.borderBottomStyle, s.borderBottomWidth, 'bottom')) {
+                  solidSides.push(TdBorder.BOTTOM)
+                }
+                if (hasBorder(s.borderLeftStyle, s.borderLeftWidth, 'left')) {
+                  solidSides.push(TdBorder.LEFT)
+                }
+                const allSides: TdBorder[] = [
+                  TdBorder.TOP,
+                  TdBorder.RIGHT,
+                  TdBorder.BOTTOM,
+                  TdBorder.LEFT
+                ]
+                if (solidSides.length) {
+                  // 有部分实线：只记录实线方向，不补虚线（避免混乱相邻格子的边界）
+                  td.borderTypes = solidSides
+                }
+                const dashSides = allSides.filter(
+                  side => !solidSides.includes(side)
+                )
+                if (dashSides.length) {
+                  td.borderDashTypes = dashSides
+                }
               }
               tr.tdList.push(td)
             })

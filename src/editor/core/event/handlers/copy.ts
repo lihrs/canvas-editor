@@ -32,7 +32,11 @@ export async function copy(host: CanvasEvent, options?: ICopyOption) {
       type: ElementType.TABLE,
       value: '',
       colgroup: [],
-      trList: []
+      trList: [],
+      borderType: tableElement.borderType,
+      borderColor: tableElement.borderColor,
+      borderWidth: tableElement.borderWidth,
+      borderExternalWidth: tableElement.borderExternalWidth
     }
     const firstRow = rowCol[0]
     const colStartIndex = firstRow[0].colIndex!

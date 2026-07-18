@@ -233,6 +233,7 @@ export class TableParticle {
         // 没有设置单元格边框 && 没有设置表格边框则忽略
         if (
           !td.borderTypes?.length &&
+          !td.borderDashTypes?.length &&
           (isEmptyBorderType || isExternalBorderType)
         ) {
           continue
@@ -264,6 +265,36 @@ export class TableParticle {
           ctx.moveTo(x - width, y)
           ctx.lineTo(x - width, y + height)
           ctx.stroke()
+        }
+        // 单元格虚线边框（borderDashTypes）
+        if (td.borderDashTypes?.length) {
+          ctx.save()
+          ctx.setLineDash([3, 3])
+          if (td.borderDashTypes.includes(TdBorder.TOP)) {
+            ctx.beginPath()
+            ctx.moveTo(x - width, y)
+            ctx.lineTo(x, y)
+            ctx.stroke()
+          }
+          if (td.borderDashTypes.includes(TdBorder.RIGHT)) {
+            ctx.beginPath()
+            ctx.moveTo(x, y)
+            ctx.lineTo(x, y + height)
+            ctx.stroke()
+          }
+          if (td.borderDashTypes.includes(TdBorder.BOTTOM)) {
+            ctx.beginPath()
+            ctx.moveTo(x, y + height)
+            ctx.lineTo(x - width, y + height)
+            ctx.stroke()
+          }
+          if (td.borderDashTypes.includes(TdBorder.LEFT)) {
+            ctx.beginPath()
+            ctx.moveTo(x - width, y)
+            ctx.lineTo(x - width, y + height)
+            ctx.stroke()
+          }
+          ctx.restore()
         }
         // 表格线
         if (!isEmptyBorderType && !isExternalBorderType) {

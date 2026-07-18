@@ -1900,24 +1900,28 @@ export class Draw {
                   td => td.rowList && td.rowList.length > 0
                 )
 
-                // 行自身最小高度是否超过整页可用高度：
-                // 只有超过时才需要强制按高度拆分（含无内容的空行），否则仅是放不下
-                // 本页剩余空间，应整行移动到下一页，避免产生与被拆分行相同的空占位行
+                // 本页剩余空间是否容不下该行的最小高度（驱动 minHeight 按比例拆分到两页）
+                const minHeightOverflow = originTr.minHeight! > usableHeight
+                // 行自身最小高度是否连一个全新页面都容不下：
+                // 只有这种"巨型空行"才需要在完全没有内容的情况下被强制按高度拆分，
+                // 否则一个短内容、大空白的行应整行移动到下一页，避免产生空占位行
                 const giantRowOverflow = originTr.minHeight! > fullPageHeight
 
                 // 被拆分行的上半部分是否保留在第一页：
-                // 原行与拆分行都有内容 -> 按内容精确拆分；
-                // 无内容可拆但行高超过整页 -> 强制按高度拆分（含空行）
+                // 原行本身有内容 -> 保留在第一页，按 minHeight 将剩余空白拆分到下一页
+                // （即使拆分行没有内容，也要把用不完的空白高度带过去）；
+                // 原行无内容且拆分行也无内容时，只有"巨型空行"才强制拆分，否则整行下移
                 const splitRowKeptOnPage1 =
-                  (originTrHasContent && cloneTrHasContent) ||
+                  originTrHasContent ||
                   (!cloneTrHasContent && giantRowOverflow)
 
-                // 溢出行必然需要处理（原地拆分或整行下移），故此处始终进入
-                if (originTr) {
+                if (cloneTrHasContent || minHeightOverflow) {
                   if (splitRowKeptOnPage1) {
                     // 情况1：原始行有内容，需要保留在第一页
                     // 插入 cloneTr 到第一页，作为拆分点所在的行
-                    if (giantRowOverflow) {
+                    if (minHeightOverflow) {
+                      // 本页剩余空间放不下该行最小高度，将空白部分按比例
+                      // 拆到下一页：第一页用满剩余空间，下一页承接剩余高度
                       originTr.originalMinHeight = originTr.minHeight!
                       originTr.minHeight = usableHeight
                       cloneTr.minHeight = Math.max(

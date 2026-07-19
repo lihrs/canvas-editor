@@ -72,6 +72,24 @@ export class Position {
     return tr.tdList[tdIndex]?.positionList || []
   }
 
+  public getTableTdByContext(
+    sourceElementList: IElement[],
+    context: IPositionContext
+  ) {
+    const tablePath = context.tablePath?.length
+      ? context.tablePath
+      : this._getTablePathByContext(context)
+    let elementList = sourceElementList
+    let td = null
+    for (let p = 0; p < tablePath.length; p++) {
+      const { index, trIndex, tdIndex } = tablePath[p]
+      td = elementList[index]?.trList?.[trIndex]?.tdList[tdIndex] || null
+      if (!td) return null
+      elementList = td.value
+    }
+    return td
+  }
+
   public buildTablePositionContext(
     context: IPositionContext,
     element: IElement,
@@ -282,6 +300,7 @@ export class Position {
     let x = startX
     let y = startY
     let index = startIndex
+    const traceParticle = this.draw.getTraceParticle()
     const columnLayout = this.draw.getColumnLayout()
     let prevColumnIndex: number | undefined = undefined
     for (let i = 0; i < rowList.length; i++) {
@@ -329,6 +348,7 @@ export class Position {
         const metrics = element.metrics
         const offsetY =
           !element.hide &&
+          !traceParticle.isTraceHidden(element) &&
           ((element.imgDisplay !== ImageDisplay.INLINE &&
             element.type === ElementType.IMAGE) ||
             element.type === ElementType.LATEX)
@@ -399,7 +419,11 @@ export class Position {
         index++
         x += metrics.width
         // 计算表格内元素位置
-        if (element.type === ElementType.TABLE && !element.hide) {
+        if (
+          element.type === ElementType.TABLE &&
+          !element.hide &&
+          !traceParticle.isTraceHidden(element)
+        ) {
           const tdPaddingWidth = tdPadding[1] + tdPadding[3]
           const tdPaddingHeight = tdPadding[0] + tdPadding[2]
           for (let t = 0; t < element.trList!.length; t++) {

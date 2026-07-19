@@ -27,6 +27,7 @@ import {
   ISpliceElementListOption,
   IInsertElementListOption
 } from '../../interface/Element'
+import { IMarkElementListDeletedOption } from '../../interface/Trace'
 import { IRow, IRowElement } from '../../interface/Row'
 import { IColumnLayout, IColumnOption } from '../../interface/Column'
 import { ColumnManager } from './column/ColumnManager'
@@ -45,6 +46,7 @@ import { Search } from './interactive/Search'
 import { Strikeout } from './richtext/Strikeout'
 import { Underline } from './richtext/Underline'
 import { ElementType } from '../../dataset/enum/Element'
+import { TraceType } from '../../dataset/enum/Trace'
 import { ImageParticle } from './particle/ImageParticle'
 import { LaTexParticle } from './particle/latex/LaTexParticle'
 import { TextParticle } from './particle/TextParticle'
@@ -54,6 +56,7 @@ import { SelectionObserver } from '../observer/SelectionObserver'
 import { TableParticle } from './particle/table/TableParticle'
 import { TableTool } from './particle/table/TableTool'
 import { HyperlinkParticle } from './particle/HyperlinkParticle'
+import { TraceParticle } from './particle/TraceParticle'
 import { LabelParticle } from './particle/LabelParticle'
 import { Header } from './frame/Header'
 import { SuperscriptParticle } from './particle/SuperscriptParticle'
@@ -186,6 +189,7 @@ export class Draw {
   private header: Header
   private footer: Footer
   private hyperlinkParticle: HyperlinkParticle
+  private traceParticle: TraceParticle
   private labelParticle: LabelParticle
   private dateParticle: DateParticle
   private separatorParticle: SeparatorParticle
@@ -276,6 +280,7 @@ export class Draw {
     this.header = new Header(this, data.header)
     this.footer = new Footer(this, data.footer)
     this.hyperlinkParticle = new HyperlinkParticle(this)
+    this.traceParticle = new TraceParticle(this)
     this.labelParticle = new LabelParticle(this)
     this.dateParticle = new DateParticle(this)
     this.separatorParticle = new SeparatorParticle(this)
@@ -402,6 +407,7 @@ export class Draw {
       case EditorMode.READONLY:
       case EditorMode.PRINT:
       case EditorMode.GRAFFITI:
+      case EditorMode.TRACE:
         return true
       case EditorMode.FORM:
         return !this.control.getIsRangeWithinControl()
@@ -452,6 +458,41 @@ export class Draw {
 
   public isGraffitiMode() {
     return this.mode === EditorMode.GRAFFITI
+  }
+
+  public isTraceMode() {
+    return this.mode === EditorMode.TRACE
+  }
+
+  public setTraceEnabled(enabled: boolean) {
+    // 留痕查看模式下不允许切换记录开关，避免查看态偷偷改数据
+    if (this.mode === EditorMode.TRACE) return
+    if (!this.options.trace.disabled === enabled) return
+    this.options.trace.disabled = !enabled
+    this.render({
+      isSetCursor: false,
+      isSubmitHistory: false
+    })
+  }
+
+  // 删除元素：trace 启用时软删除（保留在原位仅打标），否则硬删除
+  public deleteElementList(
+    elementList: IElement[],
+    index: number,
+    count: number = 1,
+    options?: IMarkElementListDeletedOption
+  ) {
+    if (!this.options.trace.disabled) {
+      return this.traceParticle.markElementListDeleted(
+        elementList.slice(index, index + count),
+        options
+      )
+    } else {
+      this.spliceElementList(elementList, index, count, undefined, {
+        isIgnoreDeletedRule: options?.isIgnoreDeletedRule
+      })
+      return []
+    }
   }
 
   public getOriginalWidth(): number {
@@ -718,6 +759,22 @@ export class Draw {
     return this.textParticle
   }
 
+  public getStrikeout(): Strikeout {
+    return this.strikeout
+  }
+
+  public getUnderline(): Underline {
+    return this.underline
+  }
+
+  public getSubscriptParticle(): SubscriptParticle {
+    return this.subscriptParticle
+  }
+
+  public getSuperscriptParticle(): SuperscriptParticle {
+    return this.superscriptParticle
+  }
+
   public getHeaderElementList(): IElement[] {
     return this.header.getElementList()
   }
@@ -803,6 +860,7 @@ export class Draw {
       isHandleFirstElement: false,
       editorOptions: this.options
     })
+    this.traceParticle.markElementListInserted(payload)
     let curIndex = -1
     // 判断是否在控件内
     let activeControl = this.control.getActiveControl()
@@ -821,7 +879,7 @@ export class Draw {
       const isCollapsed = startIndex === endIndex
       const start = startIndex + 1
       if (!isCollapsed) {
-        this.spliceElementList(elementList, start, endIndex - startIndex)
+        this.deleteElementList(elementList, start, endIndex - startIndex)
       }
       this.spliceElementList(elementList, start, 0, payload)
       curIndex = startIndex + payload.length
@@ -856,6 +914,7 @@ export class Draw {
       isHandleFirstElement: false,
       editorOptions: this.options
     })
+    this.traceParticle.markElementListInserted(elementList)
     let curIndex: number
     const { isPrepend, isSubmitHistory = true } = options
     if (isPrepend) {
@@ -915,6 +974,15 @@ export class Draw {
         let deleteIndex = endIndex - 1
         while (deleteIndex >= start) {
           const deleteElement = elementList[deleteIndex]
+          // 删除痕迹不可移除
+          if (
+            deleteElement?.trace?.length &&
+            deleteElement.trace[deleteElement.trace.length - 1].type ===
+              TraceType.DELETED
+          ) {
+            deleteIndex--
+            continue
+          }
           if (
             deleteElement?.hide ||
             deleteElement?.control?.hide ||
@@ -934,7 +1002,19 @@ export class Draw {
           deleteIndex--
         }
       } else {
-        elementList.splice(start, deleteCount)
+        // 留痕删除记录不可移除
+        let deleteIndex = endIndex - 1
+        while (deleteIndex >= start) {
+          const deleteElement = elementList[deleteIndex]
+          if (
+            !deleteElement?.trace?.length ||
+            deleteElement.trace[deleteElement.trace.length - 1].type !==
+              TraceType.DELETED
+          ) {
+            elementList.splice(deleteIndex, 1)
+          }
+          deleteIndex--
+        }
       }
     }
     // 循环添加，避免使用解构影响性能
@@ -1003,6 +1083,10 @@ export class Draw {
 
   public getHyperlinkParticle(): HyperlinkParticle {
     return this.hyperlinkParticle
+  }
+
+  public getTraceParticle(): TraceParticle {
+    return this.traceParticle
   }
 
   public getDateParticle(): DateParticle {
@@ -1509,8 +1593,8 @@ export class Draw {
       y = pageStartY
     }
     // 列表位置
-    let listId: string | undefined
-    let listIndex = 0
+    // 不同 listId 独立计数，避免父列表与子列表序号互相影响
+    const listIndexMap: Map<string, number> = new Map()
     // 控件最小宽度
     let controlRealWidth = 0
     for (let i = 0; i < elementList.length; i++) {
@@ -1527,7 +1611,11 @@ export class Draw {
       // 实际可用宽度
       const offsetX =
         curRow.offsetX ||
-        (element.listId && listStyleMap.get(element.listId)) ||
+        (element.listId &&
+          (listStyleMap.get(element.listId) || 0) +
+            (element.listLevel
+              ? this.listParticle.LIST_INDENT_WIDTH * element.listLevel * scale
+              : 0)) ||
         0
       const rowMaxWidth = isColumnEnabled && layout ? layout.width : innerWidth
       const availableWidth = rowMaxWidth - offsetX
@@ -1538,7 +1626,8 @@ export class Draw {
       if (
         (element.hide ||
           element.control?.hide ||
-          (element.area?.hide && !this.isAreaHideDisabled())) &&
+          (element.area?.hide && !this.isAreaHideDisabled()) ||
+          this.traceParticle.isTraceHidden(element)) &&
         !this.isDesignMode()
       ) {
         const preElement = curRow.elementList[curRow.elementList.length - 1]
@@ -2470,6 +2559,7 @@ export class Draw {
       }
       const ascent =
         !element.hide &&
+        !this.traceParticle.isTraceHidden(element) &&
         ((element.imgDisplay !== ImageDisplay.INLINE &&
           element.type === ElementType.IMAGE) ||
           element.type === ElementType.LATEX)
@@ -2488,7 +2578,8 @@ export class Draw {
       // 控件开始时统计宽度，结束时消费最小宽度并补充跨行占位
       if (
         rowElement.control?.minWidth &&
-        !rowElement.isControlMinWidthPlaceholder
+        !rowElement.isControlMinWidthPlaceholder &&
+        !this.traceParticle.isTraceHidden(rowElement)
       ) {
         if (rowElement.controlComponent) {
           controlRealWidth += metrics.width
@@ -2561,14 +2652,16 @@ export class Draw {
         }
       }
       // 列表信息
-      if (element.listId) {
-        if (element.listId !== listId) {
-          listIndex = 0
-        } else if (element.value === ZERO && !element.listWrap) {
-          listIndex++
+      if (element.listId && element.value === ZERO && !element.listWrap) {
+        if (listIndexMap.has(element.listId)) {
+          listIndexMap.set(
+            element.listId,
+            (listIndexMap.get(element.listId) ?? 0) + 1
+          )
+        } else {
+          listIndexMap.set(element.listId, 0)
         }
       }
-      listId = element.listId
       // 计算四周环绕导致的元素偏移量
       const surroundPosition = this.position.setSurroundPosition({
         pageNo,
@@ -2645,8 +2738,12 @@ export class Draw {
         // 列表缩进
         if (element.listId) {
           row.isList = true
-          row.offsetX = listStyleMap.get(element.listId!)
-          row.listIndex = listIndex
+          row.offsetX =
+            (listStyleMap.get(element.listId!) || 0) +
+            (element.listLevel
+              ? this.listParticle.LIST_INDENT_WIDTH * element.listLevel * scale
+              : 0)
+          row.listIndex = listIndexMap.get(element.listId!) ?? 0
         }
         // Y轴偏移量
         row.offsetY =
@@ -2673,6 +2770,24 @@ export class Draw {
       }
       // 行结束时逻辑
       if (isWrap || i === elementList.length - 1) {
+        // 行内全部为隐藏元素时 => 行高折叠（仅当行内不止换行符一个元素时）
+        if (!this.isDesignMode() && curRow.height > 0) {
+          const visibleElements = curRow.elementList.filter(
+            el => el.value !== ZERO
+          )
+          const isAllHidden =
+            visibleElements.length > 0 &&
+            visibleElements.every(
+              el =>
+                el.hide ||
+                el.control?.hide ||
+                (el.area?.hide && !this.isAreaHideDisabled()) ||
+                this.traceParticle.isTraceHidden(el)
+            )
+          if (isAllHidden) {
+            curRow.height = 0
+          }
+        }
         // 换行原因：宽度不足
         curRow.isWidthNotEnough = isWidthNotEnough && !isForceBreak
         // 两端对齐、分散对齐
@@ -2907,7 +3022,8 @@ export class Draw {
         if (
           (element.hide ||
             element.control?.hide ||
-            (element.area?.hide && !this.isAreaHideDisabled())) &&
+            (element.area?.hide && !this.isAreaHideDisabled()) ||
+            this.traceParticle.isTraceHidden(element)) &&
           !this.isDesignMode()
         ) {
           // 控件隐藏时不绘制
@@ -3119,6 +3235,17 @@ export class Draw {
         } else if (preElement?.strikeout) {
           this.strikeout.render(ctx)
         }
+        // 留痕装饰
+        this.traceParticle.render({
+          ctx,
+          element,
+          x,
+          y,
+          curRow,
+          metrics,
+          offsetY,
+          scale
+        })
         // 选区记录
         const { zone: currentZone, splitTdRange } = this.range.getRange()
         let { startIndex, endIndex } = this.range.getRange()
@@ -3178,7 +3305,11 @@ export class Draw {
         }
         index++
         // 绘制表格内元素
-        if (element.type === ElementType.TABLE && !element.hide) {
+        if (
+          element.type === ElementType.TABLE &&
+          !element.hide &&
+          !this.traceParticle.isTraceHidden(element)
+        ) {
           const tdPaddingWidth = tdPadding[1] + tdPadding[3]
           for (let t = 0; t < element.trList!.length; t++) {
             const tr = element.trList![t]
@@ -3200,7 +3331,7 @@ export class Draw {
         }
       }
       // 绘制列表样式
-      if (curRow.isList) {
+      if (curRow.isList && curRow.height > 0) {
         const listPosition = positionList[curRow.startIndex]
         if (listPosition) {
           this.listParticle.drawListStyle(
@@ -3215,6 +3346,8 @@ export class Draw {
       this.control.drawBorder(ctx)
       this.underline.render(ctx)
       this.strikeout.render(ctx)
+      // 冲刷留痕累积
+      this.traceParticle.flush(ctx)
       // 绘制批注样式
       this.group.render(ctx)
       // 绘制选区
@@ -3721,6 +3854,8 @@ export class Draw {
     this.getTableTool().dispose()
     // 超链接弹窗
     this.getHyperlinkParticle().clearHyperlinkPopup()
+    // 留痕悬浮弹窗
+    this.getTraceParticle().clearTracePopup()
     // 日期控件
     this.getDateParticle().clearDatePicker()
   }

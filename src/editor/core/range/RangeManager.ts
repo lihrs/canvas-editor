@@ -16,7 +16,7 @@ import {
   RangeRowMap,
   SplitTdRange
 } from '../../interface/Range'
-import { getAnchorElement } from '../../utils/element'
+import { getAnchorElement, isElementTraceDeleted } from '../../utils/element'
 import { Draw } from '../draw/Draw'
 import { EventBus } from '../event/eventbus/EventBus'
 import { HistoryManager } from '../history/HistoryManager'
@@ -757,6 +757,7 @@ export class RangeManager {
     const selection = this.getTextLikeSelection()
     if (!selection) return ''
     return selection
+      .filter(element => !isElementTraceDeleted(element))
       .map(s => s.value)
       .join('')
       .replace(new RegExp(ZERO, 'g'), '')

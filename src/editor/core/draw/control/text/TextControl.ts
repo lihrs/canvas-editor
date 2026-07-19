@@ -13,7 +13,11 @@ import {
 import { IEditorOption } from '../../../../interface/Editor'
 import { IElement } from '../../../../interface/Element'
 import { omitObject, pickObject } from '../../../../utils'
-import { formatElementContext, scanToOwner } from '../../../../utils/element'
+import {
+  formatElementContext,
+  isElementTraceDeleted,
+  scanToOwner
+} from '../../../../utils/element'
 import { Control } from '../Control'
 import { ElementType } from '../../../../dataset/enum/Element'
 
@@ -45,8 +49,10 @@ export class TextControl implements IControlInstance {
     }
     const startElement = elementList[startIndex]
     const data: IElement[] = []
-
-    if (startElement.controlComponent === ControlComponent.VALUE) {
+    if (
+      startElement.controlComponent === ControlComponent.VALUE &&
+      !isElementTraceDeleted(startElement)
+    ) {
       data.push(startElement)
     }
     // 向左查找
@@ -67,7 +73,10 @@ export class TextControl implements IControlInstance {
       ) {
         break
       }
-      if (preElement.controlComponent === ControlComponent.VALUE) {
+      if (
+        preElement.controlComponent === ControlComponent.VALUE &&
+        !isElementTraceDeleted(preElement)
+      ) {
         data.unshift(preElement)
       }
       preIndex = next
@@ -92,7 +101,10 @@ export class TextControl implements IControlInstance {
       ) {
         break
       }
-      if (nextElement.controlComponent === ControlComponent.VALUE) {
+      if (
+        nextElement.controlComponent === ControlComponent.VALUE &&
+        !isElementTraceDeleted(nextElement)
+      ) {
         data.push(nextElement)
       }
       nextIndex = next
@@ -161,11 +173,10 @@ export class TextControl implements IControlInstance {
     }
     // 移除选区元素
     if (startIndex !== endIndex) {
-      draw.spliceElementList(
+      draw.deleteElementList(
         elementList,
         startIndex + 1,
         endIndex - startIndex,
-        [],
         {
           isIgnoreDeletedRule: options.isIgnoreDeletedRule
         }
@@ -197,6 +208,7 @@ export class TextControl implements IControlInstance {
       formatElementContext(elementList, [newElement], startIndex, {
         editorOptions: this.options
       })
+      draw.getTraceParticle().markElementListInserted([newElement])
       draw.spliceElementList(elementList, start + i, 0, [newElement])
     }
     return start + data.length - 1
@@ -218,22 +230,23 @@ export class TextControl implements IControlInstance {
       context.range || this.control.getValueRange() || this.control.getRange()
     this.control.shrinkBoundary(context)
     const { startIndex, endIndex } = range
+    const deleteStartIndex = startIndex + 1
+    const deleteCount = this.control.removePlaceholderInRange(
+      elementList,
+      deleteStartIndex,
+      endIndex - startIndex
+    )
     this.control
       .getDraw()
-      .spliceElementList(
-        elementList,
-        startIndex + 1,
-        endIndex - startIndex,
-        [],
-        {
-          isIgnoreDeletedRule: options.isIgnoreDeletedRule
-        }
-      )
-    if (options.isAddPlaceholder !== false) {
-      const value = this.getValue(context)
-      if (!value.length) {
-        this.control.addPlaceholder(startIndex, context)
-      }
+      .deleteElementList(elementList, deleteStartIndex, deleteCount, {
+        isIgnoreDeletedRule: options.isIgnoreDeletedRule
+      })
+    const value = this.getValue({
+      range,
+      elementList
+    })
+    if (!value.length) {
+      this.control.addPlaceholder(startIndex, context)
     }
     return startIndex
   }
@@ -254,7 +267,7 @@ export class TextControl implements IControlInstance {
     if (evt.key === KeyMap.Backspace) {
       // 移除选区元素
       if (startIndex !== endIndex) {
-        draw.spliceElementList(
+        draw.deleteElementList(
           elementList,
           startIndex + 1,
           endIndex - startIndex
@@ -279,7 +292,7 @@ export class TextControl implements IControlInstance {
           return this.control.removeControl(startIndex)
         } else {
           // 文本
-          draw.spliceElementList(elementList, startIndex, 1)
+          draw.deleteElementList(elementList, startIndex, 1)
           const value = this.getValue()
           if (!value.length) {
             this.control.addPlaceholder(startIndex - 1)
@@ -297,7 +310,7 @@ export class TextControl implements IControlInstance {
     } else if (evt.key === KeyMap.Delete) {
       // 移除选区元素
       if (startIndex !== endIndex) {
-        draw.spliceElementList(
+        draw.deleteElementList(
           elementList,
           startIndex + 1,
           endIndex - startIndex
@@ -332,9 +345,7 @@ export class TextControl implements IControlInstance {
           return this.control.removeControl(startIndex)
         } else {
           // 文本
-          if (endNextElement) {
-            draw.spliceElementList(elementList, startIndex + 1, 1)
-          }
+          draw.deleteElementList(elementList, startIndex + 1, 1)
           const value = this.getValue()
           if (!value.length) {
             this.control.addPlaceholder(startIndex)
@@ -363,7 +374,7 @@ export class TextControl implements IControlInstance {
     }
     const draw = this.control.getDraw()
     const elementList = this.control.getElementList()
-    draw.spliceElementList(elementList, startIndex + 1, endIndex - startIndex)
+    draw.deleteElementList(elementList, startIndex + 1, endIndex - startIndex)
     const value = this.getValue()
     if (!value.length) {
       this.control.addPlaceholder(startIndex)

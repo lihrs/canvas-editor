@@ -1,6 +1,7 @@
 import { ImageDisplay } from '../dataset/enum/Common'
 import { ControlComponent } from '../dataset/enum/Control'
 import { ElementType } from '../dataset/enum/Element'
+import { TraceType } from '../dataset/enum/Trace'
 import { ListStyle, ListType } from '../dataset/enum/List'
 import { RowFlex } from '../dataset/enum/Row'
 import { TitleLevel } from '../dataset/enum/Title'
@@ -51,6 +52,16 @@ export interface IElementGroup {
   groupIds?: string[]
 }
 
+export interface ITraceRecord {
+  type: TraceType
+  author?: string
+  timestamp?: number
+}
+
+export interface IElementTrace {
+  trace?: ITraceRecord[]
+}
+
 export interface ITitleElement {
   valueList?: IElement[]
   level?: TitleLevel
@@ -64,6 +75,7 @@ export interface IListElement {
   listStyle?: ListStyle
   listId?: string
   listWrap?: boolean
+  listLevel?: number
 }
 
 export interface ITableAttr {
@@ -200,6 +212,7 @@ export type IElement = IElementBasic &
   IElementStyle &
   IElementRule &
   IElementGroup &
+  IElementTrace &
   ITable &
   IHyperlinkElement &
   ISuperscriptSubscript &

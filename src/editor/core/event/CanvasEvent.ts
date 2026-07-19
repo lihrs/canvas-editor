@@ -163,18 +163,44 @@ export class CanvasEvent {
     }
   }
 
-  public selectAll() {
-    // 光标在表格内时选择整个表格
+  private selectAllDocument() {
+    // 退出表格上下文，选区范围以主文档坐标为准
     if (this.position.getPositionContext().isTable) {
-      this.draw.getTableOperate().tableSelectAll()
+      this.position.setPositionContext({ isTable: false })
+    }
+    const positionList = this.position.getPositionList()
+    this.range.setRange(0, positionList.length - 1)
+    this.draw.render({
+      isSubmitHistory: false,
+      isSetCursor: false,
+      isCompute: false
+    })
+  }
+
+  public selectAll() {
+    const positionContext = this.position.getPositionContext()
+    // 光标在表格内时选择整个表格，若表格已被全选则再次触发时扩展为全文档选区
+    if (positionContext.isTable) {
+      const { index, tableId } = positionContext
+      const originalElementList = this.draw.getOriginalElementList()
+      const trList = originalElementList[index!].trList!
+      const endTrIndex = trList.length - 1
+      const endTdIndex = trList[endTrIndex].tdList.length - 1
+      const range = this.range.getRange()
+      const isTableFullySelected =
+        !!range.isCrossRowCol &&
+        range.tableId === tableId &&
+        range.startTrIndex === 0 &&
+        range.startTdIndex === 0 &&
+        range.endTrIndex === endTrIndex &&
+        range.endTdIndex === endTdIndex
+      if (isTableFullySelected) {
+        this.selectAllDocument()
+      } else {
+        this.draw.getTableOperate().tableSelectAll()
+      }
     } else {
-      const positionList = this.position.getPositionList()
-      this.range.setRange(0, positionList.length - 1)
-      this.draw.render({
-        isSubmitHistory: false,
-        isSetCursor: false,
-        isCompute: false
-      })
+      this.selectAllDocument()
     }
   }
 
